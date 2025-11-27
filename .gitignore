@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# Dados Pesados (Não enviar para o GitHub!)
+backend/dados/
+backend/backups/
+
+# Docker
+backend/postgres_data/
+
+# Node/Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+
+# Sistema
+.DS_Store
+Thumbs.db

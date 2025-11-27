@@ -1,0 +1,8 @@
+requests
+pandas
+tqdm
+sqlalchemy
+psycopg2-binary
+pg8000
+fastapi
+uvicorn[standard]

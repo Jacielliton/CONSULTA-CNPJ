@@ -1,0 +1,1 @@
+(for /d /r "G:\PROJETOS-CODER\SITES\CONSULTA-CNPJ" %i in (*) do @echo %i | findstr /i /v /c:"node_modules" /c:".git" /c:"venv") > lista.txt
