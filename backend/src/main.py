@@ -2,13 +2,16 @@ import os
 import subprocess
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from sqlalchemy import create_engine, text
 from typing import Optional
 from datetime import datetime
+import io
 
 app = FastAPI(title="API Casa dos Dados Clone")
 
 # --- CONFIGURAÇÃO CORS ---
+# Permite que o Frontend (Porta 3000) converse com este Backend
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -29,22 +32,27 @@ DB_HOST = "127.0.0.1"
 DB_PORT = "5433"
 DB_NAME = "cnpj_dados"
 
-# Usando driver pg8000 para compatibilidade total
+# Usando driver pg8000 para compatibilidade total com Windows
 DATABASE_URL = f"postgresql+pg8000://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 engine = create_engine(DATABASE_URL)
 
 # --- FUNÇÕES AUXILIARES (ADMIN) ---
 def executar_script(nome_script):
+    """Executa scripts Python na pasta raiz do backend"""
+    print(f"--- [ADMIN] Iniciando script: {nome_script} ---")
     try:
+        # Pega o diretório raiz do backend (um nível acima de src)
         pasta_raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         caminho_script = os.path.join(pasta_raiz, nome_script)
-        # cwd define onde o script vai rodar (na raiz do backend)
+        
+        # Executa o script e espera terminar
         subprocess.run(["python", caminho_script], check=True, cwd=pasta_raiz)
-        print(f"[ADMIN] {nome_script} executado com sucesso.")
+        print(f"--- [ADMIN] {nome_script} finalizado com sucesso ---")
     except Exception as e:
-        print(f"[ERRO] Falha ao rodar {nome_script}: {e}")
+        print(f"--- [ERRO] Falha ao rodar {nome_script}: {e}")
 
 def realizar_backup():
+    """Exporta as tabelas principais para CSV na pasta backups"""
     pasta_raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     pasta_backup = os.path.join(pasta_raiz, "backups")
     
@@ -54,17 +62,16 @@ def realizar_backup():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     tabelas = ["empresas", "estabelecimentos", "socios"]
     
-    print(f"[BACKUP] Iniciando em: {pasta_backup}")
+    print(f"--- [BACKUP] Iniciando backup em: {pasta_backup} ---")
     with engine.connect() as conn:
         for tabela in tabelas:
             arquivo = os.path.join(pasta_backup, f"{tabela}_{timestamp}.csv")
             try:
                 with open(arquivo, 'w', encoding='utf-8') as f:
                     cursor = conn.connection.cursor()
-                    # Exportação rápida usando COPY
                     sql = f"COPY (SELECT * FROM {tabela}) TO STDOUT WITH CSV HEADER"
                     cursor.execute(sql, stream=f)
-                print(f"   -> {tabela} salvo.")
+                print(f"   -> {tabela} salvo com sucesso.")
             except Exception as e:
                 print(f"   -> Erro ao salvar {tabela}: {e}")
 
@@ -74,6 +81,64 @@ def realizar_backup():
 def home():
     return {"message": "API Online 🚀", "docs": "/docs"}
 
+@app.get("/empresa/{cnpj}")
+def detalhes_empresa(cnpj: str):
+    """
+    Retorna dados detalhados da empresa, incluindo descrições de códigos (JOINs).
+    """
+    cnpj_limpo = cnpj.replace(".", "").replace("/", "").replace("-", "")
+    
+    if len(cnpj_limpo) != 14:
+        raise HTTPException(status_code=400, detail="CNPJ inválido.")
+
+    basico = cnpj_limpo[:8]
+    ordem = cnpj_limpo[8:12]
+    dv = cnpj_limpo[12:]
+
+    # Query com JOINS para trazer descrições (Casa dos Dados style)
+    sql_empresa = text("""
+        SELECT 
+            est.*, 
+            emp.razao_social, emp.natureza_juridica, emp.capital_social, emp.porte_empresa, emp.ente_federativo_responsavel,
+            nat.descricao as natureza_juridica_texto,
+            cnae.descricao as cnae_principal_texto,
+            mun.descricao as municipio_texto
+        FROM estabelecimentos est
+        LEFT JOIN empresas emp ON est.cnpj_basico = emp.cnpj_basico
+        LEFT JOIN naturezas nat ON emp.natureza_juridica = nat.codigo
+        LEFT JOIN cnaes cnae ON est.cnae_fiscal_principal = cnae.codigo
+        LEFT JOIN municipios mun ON est.municipio = mun.codigo
+        WHERE est.cnpj_basico = :basico 
+          AND est.cnpj_ordem = :ordem 
+          AND est.cnpj_dv = :dv
+        LIMIT 1
+    """)
+
+    sql_socios = text("""
+        SELECT 
+            nome_socio_razao_social, 
+            qualificacao_socio, 
+            faixa_etaria, 
+            data_entrada_sociedade,
+            identificador_socio
+        FROM socios
+        WHERE cnpj_basico = :basico
+    """)
+
+    with engine.connect() as conn:
+        res_empresa = conn.execute(sql_empresa, {"basico": basico, "ordem": ordem, "dv": dv}).mappings().fetchone()
+        
+        if not res_empresa:
+            raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+        
+        res_socios = conn.execute(sql_socios, {"basico": basico}).mappings().all()
+
+    dados = dict(res_empresa)
+    dados["socios"] = [dict(s) for s in res_socios]
+    dados["cnpj_formatado"] = f"{basico}.{ordem}/{dv}"
+    
+    return dados
+
 @app.get("/buscar")
 def buscar_empresa(
     q: Optional[str] = Query(None, description="Termo de busca (CNPJ ou Nome)"),
@@ -82,7 +147,6 @@ def buscar_empresa(
     uf: Optional[str] = Query(None, min_length=2, max_length=2, description="Filtro de Estado (UF)"),
     data_abertura: Optional[str] = Query(None, description="Data de abertura (YYYY-MM-DD)")
 ):
-    # Limpeza e Preparação
     offset = (page - 1) * limit
     termo_limpo = q.replace(".", "").replace("/", "").replace("-", "") if q else ""
     tem_filtros = (uf is not None) or (data_abertura is not None)
@@ -94,7 +158,7 @@ def buscar_empresa(
     if q and len(q) < 3 and not tem_filtros and not termo_limpo.isdigit():
          raise HTTPException(status_code=400, detail="Para buscas por nome sem filtros, digite pelo menos 3 letras.")
 
-    # 2. BUSCA EXATA (CNPJ) - Prioridade Máxima
+    # 2. BUSCA EXATA (CNPJ)
     if q and termo_limpo.isdigit() and len(termo_limpo) == 14:
         sql = """
             SELECT est.cnpj_basico, est.cnpj_ordem, est.cnpj_dv, est.nome_fantasia, 
@@ -106,7 +170,6 @@ def buscar_empresa(
         """
         params = {"basico": termo_limpo[:8], "ordem": termo_limpo[8:12], "dv": termo_limpo[12:]}
         
-        # Aplica filtros opcionais mesmo na busca por CNPJ (ex: confirmar se é de SP)
         if uf: 
             sql += " AND est.uf = :uf"
             params["uf"] = uf.upper()
@@ -124,7 +187,6 @@ def buscar_empresa(
         condicoes = []
         params = {"limit": limit, "offset": offset}
 
-        # Ordem dos filtros importa! (Data e UF primeiro para usar índices)
         if data_abertura:
             condicoes.append("est.data_inicio_atividade = :data_inicio")
             params["data_inicio"] = data_abertura.replace("-", "")
@@ -139,9 +201,7 @@ def buscar_empresa(
 
         where_clause = " AND ".join(condicoes)
 
-        # === FREIO DE SEGURANÇA OTIMIZADO ===
-        # Se o usuário NÃO usou filtros restritivos (Data ou UF), contamos apenas até 1001.
-        # Isso evita que o banco conte 1 milhão de linhas (Full Scan) para dizer que tem muitos resultados.
+        # Freio de Segurança
         LIMITE_SEGURANCA = 1000
         
         if not tem_filtros:
@@ -163,14 +223,12 @@ def buscar_empresa(
                 return {
                     "status": "too_broad",
                     "message": f"Muitos resultados encontrados (+{LIMITE_SEGURANCA}).",
-                    "detail": "Busca muito ampla. Por favor, adicione um ESTADO ou DATA para filtrar.",
+                    "detail": "Busca muito ampla. Adicione um filtro de ESTADO ou DATA.",
                     "total": total_check,
                     "items": []
                 }
-            total_real = total_check # Se é pouco, já temos o total
-        
+            total_real = total_check
         else:
-            # Se tem filtros, usamos count normal pois os índices de Data/UF garantem velocidade
             sql_count_full = f"""
                 SELECT count(*)
                 FROM estabelecimentos est
@@ -180,7 +238,7 @@ def buscar_empresa(
             with engine.connect() as conn:
                 total_real = conn.execute(text(sql_count_full), params).scalar()
 
-        # === BUSCA DE DADOS (PAGINADA) ===
+        # Busca de Dados
         sql_data = f"""
             SELECT est.cnpj_basico, est.cnpj_ordem, est.cnpj_dv, est.nome_fantasia, 
                    est.situacao_cadastral, est.uf, est.municipio, est.data_inicio_atividade,
@@ -206,6 +264,77 @@ def buscar_empresa(
             "pages": total_pages
         }
 
+@app.get("/exportar")
+def exportar_dados(
+    tipo: str = Query(..., description="dia, mes, ano, intervalo"),
+    uf: Optional[str] = Query(None, min_length=2, max_length=2),
+    valor: Optional[str] = Query(None),
+    data_fim: Optional[str] = Query(None)
+):
+    """
+    Gera CSV via streaming para download eficiente.
+    """
+    condicoes = ["1=1"]
+    params = {}
+
+    if uf:
+        condicoes.append("est.uf = :uf")
+        params["uf"] = uf.upper()
+
+    if tipo == "dia":
+        condicoes.append("est.data_inicio_atividade = :valor")
+        params["valor"] = valor.replace("-", "")
+    elif tipo == "mes":
+        condicoes.append("est.data_inicio_atividade LIKE :valor")
+        params["valor"] = f"{valor.replace('-', '')}%"
+    elif tipo == "ano":
+        condicoes.append("est.data_inicio_atividade LIKE :valor")
+        params["valor"] = f"{valor}%"
+    elif tipo == "intervalo":
+        condicoes.append("est.data_inicio_atividade BETWEEN :inicio AND :fim")
+        params["inicio"] = valor.replace("-", "")
+        params["fim"] = data_fim.replace("-", "") if data_fim else "99991231"
+
+    where_clause = " AND ".join(condicoes)
+
+    # SQL de Exportação (Trazendo campos úteis para Excel)
+    sql = f"""
+        SELECT 
+            est.cnpj_basico || est.cnpj_ordem || est.cnpj_dv as cnpj,
+            COALESCE(emp.razao_social, est.nome_fantasia) as nome,
+            est.situacao_cadastral,
+            est.data_inicio_atividade,
+            est.uf,
+            est.municipio,
+            est.logradouro,
+            est.numero,
+            est.bairro,
+            emp.capital_social
+        FROM estabelecimentos est
+        LEFT JOIN empresas emp ON est.cnpj_basico = emp.cnpj_basico
+        WHERE {where_clause}
+        LIMIT 100000 
+    """
+
+    def iterar_linhas():
+        yield "CNPJ;NOME;SITUACAO;ABERTURA;UF;MUNICIPIO;LOGRADOURO;NUMERO;BAIRRO;CAPITAL\n"
+        with engine.connect() as conn:
+            resultado = conn.execution_options(stream_results=True).execute(text(sql), params)
+            for row in resultado:
+                linha = []
+                for item in row:
+                    # Limpa caracteres que quebram CSV
+                    texto = str(item).replace(";", ",").replace("\n", " ") if item is not None else ""
+                    linha.append(texto)
+                yield ";".join(linha) + "\n"
+
+    filename = f"exportacao_{tipo}_{valor}_{uf or 'BR'}.csv"
+    return StreamingResponse(
+        iterar_linhas(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
 # --- ROTAS DE ADMINISTRAÇÃO (PAINEL) ---
 
 @app.get("/admin/stats")
@@ -216,7 +345,7 @@ def stats():
             size = conn.execute(text("SELECT pg_size_pretty(pg_database_size('cnpj_dados'));")).scalar()
         return {"total_empresas": qtd, "tamanho_db": size}
     except:
-        return {"total_empresas": 0, "tamanho_db": "Erro"}
+        return {"total_empresas": 0, "tamanho_db": "Erro de conexão"}
 
 @app.post("/admin/atualizar")
 def acao_atualizar(bg: BackgroundTasks):
@@ -237,8 +366,9 @@ def acao_backup(bg: BackgroundTasks):
 def acao_limpar():
     try:
         with engine.connect() as conn:
-            conn.execute(text("TRUNCATE TABLE socios, estabelecimentos, empresas;"))
+            # Limpa tabelas na ordem correta para não violar chaves
+            conn.execute(text("TRUNCATE TABLE socios, estabelecimentos, empresas, cnaes, naturezas, municipios;"))
             conn.commit()
-        return {"status": "Banco limpo."}
+        return {"status": "Banco de dados limpo com sucesso."}
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(status_code=500, detail=str(e))
