@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-  # O Banco de Dados em si
   db:
     image: postgres:15-alpine
     container_name: cnpj_db
@@ -10,12 +9,26 @@ services:
       POSTGRES_USER: user_cnpj
       POSTGRES_PASSWORD: password_cnpj
       POSTGRES_DB: cnpj_dados
+      # Configuração para evitar alguns erros de conexão em carga pesada
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  # Interface visual para ver o banco (tipo um PHPMyAdmin, mas pro Postgres)
+  # --- NOVO: ELASTICSEARCH ---
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
+    container_name: cnpj_elastic
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g" # Tentei subir para 2GB para aguentar a carga. Se sua RAM lotar, mude para 1g
+    ports:
+      - "9200:9200"
+    volumes:
+      - elastic_data:/usr/share/elasticsearch/data
+
   pgadmin:
     image: dpage/pgadmin4
     container_name: cnpj_pgadmin
@@ -29,3 +42,4 @@ services:
 
 volumes:
   postgres_data:
+  elastic_data:

@@ -6,3 +6,4 @@ psycopg2-binary
 pg8000
 fastapi
 uvicorn[standard]
+elasticsearch==8.11.0

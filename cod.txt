@@ -1,1 +1,1 @@
-(for /d /r "G:\PROJETOS-CODER\SITES\CONSULTA-CNPJ" %i in (*) do @echo %i | findstr /i /v /c:"node_modules" /c:".git" /c:"venv") > lista.txt
+for /f "delims=" %i in ('dir "G:\PROJETOS-CODER\SITES\CONSULTA-CNPJ" /b /s ^| findstr /v /i "venv" ^| findstr /v /i "node_modules" ^| findstr /v /i ".git"') do @echo %i >> lista.txt
