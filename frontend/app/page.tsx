@@ -2,6 +2,11 @@
 import { useState, FormEvent } from 'react';
 import Link from 'next/link';
 
+// --- CONFIGURAÇÃO DE AMBIENTE ---
+// Se houver variável de ambiente configurada, usa ela. 
+// Caso contrário, usa localhost (fallback para desenvolvimento local)
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
 interface Empresa {
   razao_social: string;
   nome_fantasia: string;
@@ -69,7 +74,8 @@ export default function Home() {
       params.append('page', pagina.toString());
       params.append('limit', '10');
 
-      const res = await fetch(`http://127.0.0.1:8000/buscar?${params.toString()}`);
+      // USO DA VARIÁVEL DE AMBIENTE AQUI
+      const res = await fetch(`${API_BASE}/buscar?${params.toString()}`);
       
       if (!res.ok) {
         const erroMsg = await res.json();
@@ -78,7 +84,6 @@ export default function Home() {
 
       const data = await res.json();
       
-      // Tratamento do Freio de Segurança
       if (data.status === 'too_broad') {
         setAvisoMuitosResultados({
           show: true,
@@ -136,8 +141,8 @@ export default function Home() {
       params.append('valor', valorExport);
       if (dataFimExport) params.append('data_fim', dataFimExport);
 
-      // Dispara download direto no navegador
-      window.location.href = `http://127.0.0.1:8000/exportar?${params.toString()}`;
+      // USO DA VARIÁVEL DE AMBIENTE AQUI TAMBÉM
+      window.location.href = `${API_BASE}/exportar?${params.toString()}`;
       
     } catch (e) {
       alert("Erro ao iniciar download.");

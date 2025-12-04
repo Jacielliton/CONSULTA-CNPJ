@@ -1,0 +1,260 @@
+Este é um guia completo para levar seu projeto (Backend Python + Postgres + Elastic + Frontend Next.js) do Windows para uma **VPS Linux (Ubuntu 22.04 ou 20.04)**.
+
+-----
+
+# 🚀 Tutorial: Deploy do Sistema CNPJ em VPS Linux
+
+### 📋 Requisitos da VPS
+
+Como estamos lidando com Elasticsearch e importação de milhões de linhas, **não use uma VPS básica (1GB RAM)**.
+
+  * **Mínimo Recomendado:** 4 vCPUs, 8GB a 16GB de RAM, 160GB SSD (NVMe preferencialmente).
+  * **Dica:** Se a RAM for baixa (ex: 8GB), o passo de **Swap** (Memória Virtual) abaixo é obrigatório.
+
+-----
+
+### Passo 1: Preparar o Ambiente Linux
+
+Acesse sua VPS via SSH (`ssh root@ip-da-vps`).
+
+#### 1.1. Atualizar o sistema e instalar ferramentas básicas
+
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install git curl htop screen zip unzip -y
+```
+
+#### 1.2. Instalar Docker e Docker Compose
+
+O script oficial é a forma mais fácil:
+
+```bash
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+```
+
+Verifique se instalou corretamente:
+
+```bash
+docker --version
+docker compose version
+```
+
+#### 1.3. Criar Memória SWAP (Essencial para o Elasticsearch)
+
+O Elastic e a importação consomem muita RAM. Vamos criar 4GB de memória virtual no disco para evitar travamentos.
+
+```bash
+sudo fallocate -l 4G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+```
+
+#### 1.4. Aumentar limite de memória do sistema (Exigência do Elastic)
+
+O Elasticsearch precisa de um limite maior de mapas de memória virtual.
+
+```bash
+echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+```
+
+-----
+
+### Passo 2: Transferir os Arquivos
+
+Você pode usar o **FileZilla** ou **WinSCP** no Windows para enviar sua pasta do projeto.
+
+1.  Crie a pasta na VPS:
+    ```bash
+    mkdir -p /opt/consulta-cnpj
+    cd /opt/consulta-cnpj
+    ```
+2.  Envie as pastas `backend` e `frontend` (excluindo `node_modules`, `venv`, `.next`, `__pycache__` e a pasta `dados` se estiver cheia) para dentro de `/opt/consulta-cnpj`.
+
+A estrutura deve ficar assim:
+
+```text
+/opt/consulta-cnpj/
+├── backend/
+│   ├── docker-compose.yml
+│   ├── src/
+│   ├── etl_import.py
+│   └── ...
+└── frontend/
+    ├── package.json
+    └── ...
+```
+
+-----
+
+### Passo 3: Configurar e Rodar o Docker
+
+#### 3.1. Ajustar Permissões
+
+Dê permissão de execução aos scripts e garanta que o Docker consiga ler/escrever.
+
+```bash
+cd /opt/consulta-cnpj/backend
+chmod +x *.py
+```
+
+#### 3.2. Subir os Containers
+
+```bash
+docker compose up -d
+```
+
+*Aguarde uns minutos. O Postgres e o Elastic vão baixar e iniciar.*
+
+Verifique se estão rodando:
+
+```bash
+docker compose ps
+```
+
+*(Todos devem estar como "Up" ou "Running").*
+
+-----
+
+### Passo 4: Rodar a API e o Frontend
+
+Na VPS, você tem duas opções: rodar o Python/Node direto na máquina ou criar Dockerfiles para eles também. Para manter a simplicidade e igual ao seu ambiente local, vamos rodar direto na VPS.
+
+#### 4.1. Configurar Backend (Python)
+
+```bash
+# Instalar Python e Venv
+sudo apt install python3-pip python3-venv -y
+
+# Criar ambiente virtual
+cd /opt/consulta-cnpj/backend
+python3 -m venv venv
+source venv/bin/activate
+
+# Instalar dependências
+pip install -r requirements.txt
+pip install uvicorn
+```
+
+**Rodar API em Segundo Plano:**
+Para a API não cair quando você fechar o terminal, usamos o `screen`:
+
+```bash
+screen -S api
+# Dentro da tela do screen:
+uvicorn src.main:app --host 0.0.0.0 --port 8000
+```
+
+*(Para sair sem fechar, pressione `Ctrl+A` depois `D`)*.
+
+#### 4.2. Configurar Frontend (Node.js)
+
+```bash
+# Instalar Node 18
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Instalar dependências e Build
+cd /opt/consulta-cnpj/frontend
+npm install
+npm run build
+```
+
+**Rodar Frontend em Segundo Plano:**
+
+```bash
+screen -S frontend
+# Dentro da tela do screen:
+npm start -- -p 3000
+```
+
+*(Para sair sem fechar, pressione `Ctrl+A` depois `D`)*.
+
+-----
+
+### Passo 5: Importação de Dados (A Parte Demorada)
+
+⚠️ **Atenção:** Como isso leva horas, **SEMPRE** use o `screen` para rodar os scripts. Se sua internet cair, o processo continua rodando na VPS.
+
+1.  Entre no modo screen:
+
+    ```bash
+    screen -S importacao
+    ```
+
+2.  Vá para a pasta backend e ative o venv:
+
+    ```bash
+    cd /opt/consulta-cnpj/backend
+    source venv/bin/activate
+    ```
+
+3.  Rode a sequência (Manual ou via API):
+
+    **A. Download:**
+
+    ```bash
+    python etl_download.py
+    ```
+
+    **B. Importar Postgres:**
+
+    ```bash
+    python etl_import.py
+    ```
+
+    *(Aqui você verá as barras de progresso do tqdm igual no Windows)*.
+
+    **C. Otimizar Banco:**
+
+    ```bash
+    python etl_optimize_db.py
+    ```
+
+    **D. Sincronizar Elastic:**
+
+    ```bash
+    python etl_sync_es.py
+    ```
+
+4.  Para sair e deixar rodando: `Ctrl+A` depois `D`.
+
+5.  Para voltar e ver o progresso depois: `screen -r importacao`.
+
+-----
+
+### Passo 6: Liberar Portas (Firewall)
+
+Se você usa AWS, DigitalOcean, Google Cloud, precisa liberar as portas no painel deles.
+No Ubuntu, libere também no firewall interno (`ufw`):
+
+```bash
+sudo ufw allow 22/tcp   # SSH
+sudo ufw allow 3000/tcp # Frontend
+sudo ufw allow 8000/tcp # API
+sudo ufw allow 5433/tcp # Opcional: Banco Externo
+sudo ufw enable
+```
+
+### Passo 7: Acessar
+
+Agora você pode acessar pelo navegador:
+
+  * **Frontend:** `http://IP-DA-VPS:3000`
+  * **Painel Admin:** `http://IP-DA-VPS:3000/admin`
+  * **API Docs:** `http://IP-DA-VPS:8000/docs`
+
+-----
+
+### 🛡️ Dica de Segurança Importante
+
+Atualmente seu `docker-compose.yml` expõe o banco (5433) e o Elastic (9200) para a internet com senhas padrão (`password_cnpj`).
+
+1.  **Edite o docker-compose.yml** na VPS:
+      * Mude: `ports: - "5433:5432"` para `ports: - "127.0.0.1:5433:5432"` (Isso faz o banco só ser acessível por dentro da VPS).
+      * Mude: `ports: - "9200:9200"` para `ports: - "127.0.0.1:9200:9200"`.
+2.  Reinicie: `docker compose up -d`.
+3.  Assim, apenas sua API (que roda localmente na VPS) consegue falar com o banco, evitando hackers.
