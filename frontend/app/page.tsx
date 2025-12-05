@@ -3,8 +3,6 @@ import { useState, FormEvent } from 'react';
 import Link from 'next/link';
 
 // --- CONFIGURAÇÃO DE AMBIENTE ---
-// Se houver variável de ambiente configurada, usa ela. 
-// Caso contrário, usa localhost (fallback para desenvolvimento local)
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 interface Empresa {
@@ -74,7 +72,6 @@ export default function Home() {
       params.append('page', pagina.toString());
       params.append('limit', '10');
 
-      // USO DA VARIÁVEL DE AMBIENTE AQUI
       const res = await fetch(`${API_BASE}/buscar?${params.toString()}`);
       
       if (!res.ok) {
@@ -141,7 +138,6 @@ export default function Home() {
       params.append('valor', valorExport);
       if (dataFimExport) params.append('data_fim', dataFimExport);
 
-      // USO DA VARIÁVEL DE AMBIENTE AQUI TAMBÉM
       window.location.href = `${API_BASE}/exportar?${params.toString()}`;
       
     } catch (e) {
@@ -155,8 +151,18 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4 relative">
       
+      {/* --- NAVEGAÇÃO SUPERIOR --- */}
+      <div className="absolute top-4 right-4 z-10">
+        <Link 
+            href="/admin" 
+            className="flex items-center gap-2 text-gray-500 hover:text-blue-700 font-medium transition px-3 py-2 rounded hover:bg-gray-100"
+        >
+            ⚙️ Painel Admin
+        </Link>
+      </div>
+
       {/* --- CABEÇALHO --- */}
-      <div className="w-full max-w-4xl text-center mb-8">
+      <div className="w-full max-w-4xl text-center mb-8 mt-4">
         <h1 className="text-4xl font-bold text-blue-800">Consulta CNPJ Otimizada</h1>
         <div className="flex flex-col sm:flex-row justify-center items-center gap-4 mt-4">
             <p className="text-gray-600">Base de dados oficial da Receita Federal.</p>
@@ -176,7 +182,7 @@ export default function Home() {
             <div className="flex justify-between items-center mb-4 border-b pb-2">
               <h2 className="text-xl font-bold text-gray-800">Exportar Relatório</h2>
               <button onClick={() => setModalAberto(false)} className="text-gray-500 hover:text-red-500 text-2xl">&times;</button>
-            </div>
+            </div>            
 
             <div className="space-y-4">
               <div>
@@ -258,6 +264,7 @@ export default function Home() {
 
       {/* --- FORMULÁRIO DE BUSCA --- */}
       <form onSubmit={handleSearch} className="w-full max-w-4xl bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+        
         <div className="flex flex-col md:flex-row gap-4 mb-4">
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-1">Empresa ou CNPJ</label>
@@ -296,6 +303,16 @@ export default function Home() {
               onChange={(e) => setFiltroData(e.target.value)}
             />
           </div>
+        </div>
+
+        {/* LINK PARA BUSCA AVANÇADA */}
+        <div className="flex justify-end mb-4">
+            <Link 
+                href="/pesquisa-avancada" 
+                className="text-blue-600 text-sm font-semibold hover:underline flex items-center gap-1"
+            >
+                🔬 Ir para Busca Avançada (Por Cidade e Filtros) →
+            </Link>
         </div>
 
         <button 
