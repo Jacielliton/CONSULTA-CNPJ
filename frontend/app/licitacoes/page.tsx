@@ -106,8 +106,7 @@ export default function LicitacoesPage() {
                         📜 Monitor de Licitações (MA)
                     </h1>
                     <p className="text-xs text-gray-500">Acompanhe editais do TCE e Diário Oficial</p>
-                </div>
-                <Link href="/" className="text-sm text-gray-500 hover:text-blue-600">← Voltar para Dashboard</Link>
+                </div>                
             </header>
 
             <div className="flex flex-1">

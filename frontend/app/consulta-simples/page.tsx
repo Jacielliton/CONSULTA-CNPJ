@@ -2,7 +2,7 @@
 import { useState, FormEvent } from 'react';
 import Link from 'next/link';
 
-// --- CONFIGURAÇÃO DE AMBIENTE ---
+// Configuração de API
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 interface Empresa {
@@ -17,424 +17,296 @@ interface Empresa {
   data_inicio_atividade: string;
 }
 
-export default function Home() {
-  // --- ESTADOS DA BUSCA ---
+export default function ConsultaSimples() {
+  // --- FILTROS ---
   const [termo, setTermo] = useState('');
   const [filtroUF, setFiltroUF] = useState('');
   const [filtroData, setFiltroData] = useState('');
-  
-  // --- ESTADOS DOS DADOS ---
+  const [filtroSituacao, setFiltroSituacao] = useState('02'); // Padrão 02 (Ativa)
+
+  // --- ESTADOS ---
   const [resultados, setResultados] = useState<Empresa[]>([]);
   const [totalResultados, setTotalResultados] = useState(0);
   const [paginaAtual, setPaginaAtual] = useState(1);
-  const [totalPaginas, setTotalPaginas] = useState(1);
-  
-  // --- ESTADOS DE CONTROLE ---
   const [loading, setLoading] = useState(false);
   const [buscou, setBuscou] = useState(false);
-  const [avisoMuitosResultados, setAvisoMuitosResultados] = useState<{show: boolean, msg: string, detail: string}>({ show: false, msg: '', detail: '' });
+  const [erro, setErro] = useState('');
+  const [exportando, setExportando] = useState(false);
 
-  // --- ESTADOS DE EXPORTAÇÃO (MODAL) ---
-  const [modalAberto, setModalAberto] = useState(false);
-  const [tipoExport, setTipoExport] = useState('dia');
-  const [ufExport, setUfExport] = useState('');
-  const [valorExport, setValorExport] = useState('');
-  const [dataFimExport, setDataFimExport] = useState('');
-  const [loadingExport, setLoadingExport] = useState(false);
+  // --- OPÇÕES DE SITUAÇÃO ---
+  const situacoes = [
+    { cod: "", label: "Todas as Situações" },
+    { cod: "02", label: "✅ Ativa" },
+    { cod: "08", label: "🛑 Baixada" },
+    { cod: "04", label: "⚠️ Inapta" },
+    { cod: "03", label: "⏸️ Suspensa" },
+    { cod: "01", label: "❌ Nula" }
+  ];
 
-  // --- FUNÇÕES UTILITÁRIAS ---
-  const formatarData = (dataString: string) => {
-    if (!dataString || dataString.length !== 8) return dataString;
-    const ano = dataString.substring(0, 4);
-    const mes = dataString.substring(4, 6);
-    const dia = dataString.substring(6, 8);
-    return `${dia}/${mes}/${ano}`;
+  // --- FUNÇÕES AUXILIARES ---
+  const formatarData = (d: string) => {
+    if (!d || d.length !== 8) return d;
+    return `${d.substr(6, 2)}/${d.substr(4, 2)}/${d.substr(0, 4)}`;
   };
 
-  // --- LÓGICA DE BUSCA ---
-  const realizarBusca = async (pagina: number) => {
-    if (!termo && !filtroUF && !filtroData) {
-      alert("Por favor, preencha pelo menos um filtro (Nome, Estado ou Data) para pesquisar.");
-      return;
-    }
+  const construirParams = (pagina: number) => {
+    const params = new URLSearchParams();
+    if (termo) params.append('q', termo);
+    if (filtroUF) params.append('uf', filtroUF);
+    if (filtroSituacao) params.append('situacao', filtroSituacao);
+    
+    // Se preencher data, usamos como filtro de inicio (>= data)
+    if (filtroData) params.append('data_inicio', filtroData);
+    
+    params.append('page', pagina.toString());
+    params.append('limit', '10');
+    return params;
+  };
 
+  const realizarBusca = async (pagina: number) => {
     setLoading(true);
     setBuscou(true);
-    setAvisoMuitosResultados({ show: false, msg: '', detail: '' });
+    setErro('');
     setResultados([]);
 
     try {
-      const params = new URLSearchParams();
-      if (termo) params.append('q', termo);
-      if (filtroUF) params.append('uf', filtroUF);
-      if (filtroData) params.append('data_abertura', filtroData);
-      
-      params.append('page', pagina.toString());
-      params.append('limit', '10');
-
+      const params = construirParams(pagina);
       const res = await fetch(`${API_BASE}/buscar?${params.toString()}`);
       
-      if (!res.ok) {
-        const erroMsg = await res.json();
-        throw new Error(erroMsg.detail || 'Erro desconhecido na API');
-      }
+      if (!res.ok) throw new Error('Erro ao conectar com o servidor.');
 
       const data = await res.json();
-      
-      if (data.status === 'too_broad') {
-        setAvisoMuitosResultados({
-          show: true,
-          msg: data.message,
-          detail: data.detail
-        });
-        setTotalResultados(data.total); 
-        setResultados([]); 
-      } else {
-        setResultados(data.items);
-        setTotalResultados(data.total);
-        setPaginaAtual(data.page);
-        setTotalPaginas(data.pages);
-      }
+      setResultados(data.items || []);
+      setTotalResultados(data.total || 0);
+      setPaginaAtual(data.page || 1);
 
-    } catch (error: any) {
-      console.error(error);
-      alert(error.message || "Erro ao conectar com o servidor.");
+    } catch (error) {
+      setErro("Falha ao buscar dados. Tente novamente.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSearch = (e: FormEvent) => {
+  const handleExportar = () => {
+    setExportando(true);
+    try {
+      // Remove paginação para o CSV e usa a rota de exportação
+      const params = construirParams(1); 
+      params.delete('page');
+      params.delete('limit');
+      
+      window.location.href = `${API_BASE}/exportar?${params.toString()}`;
+    } catch (e) {
+      alert("Erro ao iniciar download.");
+    } finally {
+      setTimeout(() => setExportando(false), 2000);
+    }
+  };
+
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     setPaginaAtual(1);
     realizarBusca(1);
   };
 
-  const mudarPagina = (novaPagina: number) => {
-    if (novaPagina >= 1 && novaPagina <= totalPaginas) {
-      setPaginaAtual(novaPagina);
-      realizarBusca(novaPagina);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
-  // --- LÓGICA DE EXPORTAÇÃO ---
-  const handleExportar = async () => {
-    if (!valorExport && tipoExport !== 'intervalo') {
-      alert("Preencha o valor da data/ano.");
-      return;
-    }
-    if (tipoExport === 'intervalo' && (!valorExport || !dataFimExport)) {
-      alert("Preencha as duas datas.");
-      return;
-    }
-
-    setLoadingExport(true);
-    
-    try {
-      const params = new URLSearchParams();
-      params.append('tipo', tipoExport);
-      if (ufExport) params.append('uf', ufExport);
-      params.append('valor', valorExport);
-      if (dataFimExport) params.append('data_fim', dataFimExport);
-
-      window.location.href = `${API_BASE}/exportar?${params.toString()}`;
-      
-    } catch (e) {
-      alert("Erro ao iniciar download.");
-    } finally {
-      setLoadingExport(false);
-      setModalAberto(false);
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center py-10 px-4 relative">
+    <div className="min-h-screen bg-slate-50 flex flex-col">
       
-      {/* --- NAVEGAÇÃO SUPERIOR --- */}
-      <div className="absolute top-4 right-4 z-10">
-        <Link 
-            href="/admin" 
-            className="flex items-center gap-2 text-gray-500 hover:text-blue-700 font-medium transition px-3 py-2 rounded hover:bg-gray-100"
-        >
-            ⚙️ Painel Admin
-        </Link>
-      </div>
 
-      {/* --- CABEÇALHO --- */}
-      <div className="w-full max-w-4xl text-center mb-8 mt-4">
-        <h1 className="text-4xl font-bold text-blue-800">Consulta CNPJ Otimizada</h1>
-        <div className="flex flex-col sm:flex-row justify-center items-center gap-4 mt-4">
-            <p className="text-gray-600">Base de dados oficial da Receita Federal.</p>
-            <button 
-                onClick={() => setModalAberto(true)}
-                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 shadow-sm flex items-center gap-2 text-sm font-medium transition"
-            >
-                📂 Exportar Dados (CSV)
-            </button>
-        </div>
-      </div>
+      <main className="flex-1 max-w-5xl mx-auto w-full p-6">
+        
+        {/* Painel de Filtros */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
+          <h2 className="text-xl font-bold text-gray-800 mb-4">Parâmetros da Busca</h2>
+          
+          <form onSubmit={handleSubmit} className="space-y-4">
+            
+            {/* Linha 1: Barra de Pesquisa Principal */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Empresa</label>
+              <input
+                type="text"
+                placeholder="Nome da Empresa, Razão Social ou CNPJ..."
+                className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none text-gray-900"
+                value={termo}
+                onChange={(e) => setTermo(e.target.value)}
+              />
+            </div>
 
-      {/* --- MODAL DE EXPORTAÇÃO --- */}
-      {modalAberto && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md animate-fade-in-up">
-            <div className="flex justify-between items-center mb-4 border-b pb-2">
-              <h2 className="text-xl font-bold text-gray-800">Exportar Relatório</h2>
-              <button onClick={() => setModalAberto(false)} className="text-gray-500 hover:text-red-500 text-2xl">&times;</button>
-            </div>            
-
-            <div className="space-y-4">
+            {/* Linha 2: Filtros Secundários (Grid) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              
+              {/* Filtro UF */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Filtro</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Estado (UF)</label>
                 <select 
-                  className="w-full p-2 border rounded text-black bg-white"
-                  value={tipoExport}
-                  onChange={(e) => { setTipoExport(e.target.value); setValorExport(''); setDataFimExport(''); }}
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
+                  value={filtroUF}
+                  onChange={(e) => setFiltroUF(e.target.value)}
                 >
-                  <option value="dia">Data Específica (Dia)</option>
-                  <option value="mes">Mês e Ano</option>
-                  <option value="ano">Ano Completo</option>
-                  <option value="intervalo">Intervalo de Datas</option>
+                  <option value="">Todos os Estados</option>
+                  {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => (
+                    <option key={uf} value={uf}>{uf}</option>
+                  ))}
                 </select>
               </div>
 
+              {/* Filtro Data */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Estado (Opcional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Abertura (A partir de)</label>
+                <input 
+                  type="date"
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 text-gray-700"
+                  value={filtroData}
+                  onChange={(e) => setFiltroData(e.target.value)}
+                />
+              </div>
+
+              {/* Filtro Situação */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Situação Cadastral</label>
                 <select 
-                  className="w-full p-2 border rounded text-black bg-white"
-                  value={ufExport}
-                  onChange={(e) => setUfExport(e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 bg-white text-gray-700"
+                  value={filtroSituacao}
+                  onChange={(e) => setFiltroSituacao(e.target.value)}
                 >
-                  <option value="">Todo o Brasil</option>
-                  <option value="SP">SP</option><option value="RJ">RJ</option><option value="MG">MG</option>
-                  <option value="RS">RS</option><option value="PR">PR</option><option value="SC">SC</option>
-                  <option value="BA">BA</option><option value="MA">MA</option>
-                  <option value="DF">DF</option>
-                  <option value="GO">GO</option><option value="PE">PE</option>
-                  <option value="CE">CE</option><option value="PA">PA</option>
+                  {situacoes.map(s => <option key={s.cod} value={s.cod}>{s.label}</option>)}
                 </select>
               </div>
 
-              {tipoExport === 'dia' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Data</label>
-                  <input type="date" className="w-full p-2 border rounded text-black" value={valorExport} onChange={e => setValorExport(e.target.value)} />
-                </div>
-              )}
+            </div>
 
-              {tipoExport === 'mes' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Mês/Ano</label>
-                  <input type="month" className="w-full p-2 border rounded text-black" value={valorExport} onChange={e => setValorExport(e.target.value)} />
-                </div>
-              )}
-
-              {tipoExport === 'ano' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Ano (ex: 2023)</label>
-                  <input type="number" min="1900" max="2030" className="w-full p-2 border rounded text-black" value={valorExport} onChange={e => setValorExport(e.target.value)} placeholder="2023" />
-                </div>
-              )}
-
-              {tipoExport === 'intervalo' && (
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700">Início</label>
-                    <input type="date" className="w-full p-2 border rounded text-black" value={valorExport} onChange={e => setValorExport(e.target.value)} />
-                  </div>
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-gray-700">Fim</label>
-                    <input type="date" className="w-full p-2 border rounded text-black" value={dataFimExport} onChange={e => setDataFimExport(e.target.value)} />
-                  </div>
-                </div>
-              )}
-
-              <button 
-                onClick={handleExportar}
-                disabled={loadingExport}
-                className="w-full bg-green-600 text-white font-bold py-3 rounded hover:bg-green-700 transition mt-4 shadow-sm"
+            {/* Linha 3: Botões de Ação */}
+            <div className="flex gap-3 pt-2">
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition disabled:opacity-70 flex items-center justify-center gap-2"
               >
-                {loadingExport ? "Gerando Arquivo..." : "📥 Baixar CSV"}
+                {loading ? <span className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full"/> : "🔍 Pesquisar Empresas"}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportar}
+                disabled={exportando || loading}
+                className="px-6 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition disabled:opacity-70 flex items-center gap-2"
+              >
+                {exportando ? "Baixando..." : "📥 Exportar CSV"}
               </button>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* --- FORMULÁRIO DE BUSCA --- */}
-      <form onSubmit={handleSearch} className="w-full max-w-4xl bg-white p-6 rounded-xl shadow-lg border border-gray-200">
-        
-        <div className="flex flex-col md:flex-row gap-4 mb-4">
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Empresa ou CNPJ</label>
-            <input
-              type="text"
-              placeholder="Ex: Padaria, 12.345.678..."
-              className="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 text-black placeholder-gray-400"
-              value={termo}
-              onChange={(e) => setTermo(e.target.value)}
-            />
-          </div>
-          <div className="w-full md:w-32">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Estado</label>
-            <select 
-              className="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 text-black bg-white"
-              value={filtroUF}
-              onChange={(e) => setFiltroUF(e.target.value)}
-            >
-              <option value="">Todos</option>
-              <option value="SP">SP</option><option value="RJ">RJ</option><option value="MG">MG</option>
-              <option value="RS">RS</option><option value="PR">PR</option><option value="SC">SC</option>
-              <option value="BA">BA</option><option value="GO">GO</option><option value="PE">PE</option>
-              <option value="CE">CE</option><option value="PA">PA</option>
-              <option value="MA">MA</option>
-              <option value="DF">DF</option>
-              <option value="ES">ES</option>
-              <option value="MT">MT</option>
-            </select>
-          </div>
-          <div className="w-full md:w-48">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Data de Abertura</label>
-            <input
-              type="date"
-              className="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 text-black"
-              value={filtroData}
-              onChange={(e) => setFiltroData(e.target.value)}
-            />
-          </div>
+          </form>
+          
+          {erro && <p className="text-red-600 bg-red-50 p-3 rounded-lg text-sm mt-4">{erro}</p>}
         </div>
 
-        {/* LINK PARA BUSCA AVANÇADA */}
-        <div className="flex justify-end mb-4">
-            <Link 
-                href="/pesquisa-avancada" 
-                className="text-blue-600 text-sm font-semibold hover:underline flex items-center gap-1"
-            >
-                🔬 Ir para Busca Avançada (Por Cidade e Filtros) →
-            </Link>
-        </div>
-
-        <button 
-          type="submit" 
-          disabled={loading}
-          className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition disabled:bg-gray-400 flex justify-center items-center gap-2"
-        >
-          {loading ? (
-            <>
-              <span className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></span>
-              Buscando...
-            </>
-          ) : (
-            "🔍 Pesquisar"
-          )}
-        </button>
-      </form>
-
-      {/* --- ÁREA DE RESULTADOS --- */}
-      <div className="w-full max-w-4xl mt-8 mb-20">
-        
-        {/* ALERTA DE MUITOS RESULTADOS */}
-        {avisoMuitosResultados.show && (
-          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-6 rounded shadow-md mb-6 animate-fade-in">
-            <div className="flex items-start">
-              <div className="flex-shrink-0 text-3xl">⚠️</div>
-              <div className="ml-4">
-                <p className="font-bold text-yellow-800 text-lg">{avisoMuitosResultados.msg}</p>
-                <p className="text-yellow-700 mt-1">{avisoMuitosResultados.detail}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* CONTADOR */}
-        {buscou && !loading && !avisoMuitosResultados.show && (
-          <div className="mb-4 text-gray-600 font-medium">
-            Encontrados <strong>{totalResultados}</strong> resultados 
-            {totalResultados > 0 && ` (Página ${paginaAtual} de ${totalPaginas})`}
-          </div>
-        )}
-
-        {/* LISTA DE CARDS COM LINK */}
+        {/* Lista de Resultados */}
         <div className="space-y-4">
+          
+          {/* Contador */}
+          {buscou && !loading && !erro && (
+            <div className="flex justify-between items-end pb-2 border-b border-gray-200">
+              <span className="text-gray-600 font-medium">Resultados encontrados</span>
+              <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold">
+                {totalResultados} registros
+              </span>
+            </div>
+          )}
+
+          {/* Cards */}
           {resultados.map((empresa, index) => (
             <Link 
               href={`/empresa/${empresa.cnpj_basico}${empresa.cnpj_ordem}${empresa.cnpj_dv}`} 
               key={index}
               className="block group"
             >
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:border-blue-400 hover:shadow-md transition cursor-pointer relative">
+              <div className="bg-white p-5 rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md transition duration-200 flex flex-col sm:flex-row justify-between gap-4">
                 
-                {/* Seta indicativa de clique (aparece no hover) */}
-                <div className="absolute right-4 top-4 opacity-0 group-hover:opacity-100 transition text-blue-500">
-                  ↗
+                {/* Dados Principais */}
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800 group-hover:text-blue-700 transition">
+                    {empresa.razao_social || empresa.nome_fantasia}
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-3 mt-2 text-sm text-gray-500">
+                    <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-700 border border-gray-200">
+                      {empresa.cnpj_basico}.{empresa.cnpj_ordem}/{empresa.cnpj_dv}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      📍 {empresa.municipio}/{empresa.uf}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="flex flex-col sm:flex-row justify-between items-start">
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-800 group-hover:text-blue-700 transition">
-                      {empresa.razao_social || empresa.nome_fantasia}
-                    </h2>
-                    <p className="text-sm text-gray-500 font-mono mt-1">
-                      CNPJ: {empresa.cnpj_basico}.{empresa.cnpj_ordem}/{empresa.cnpj_dv}
-                    </p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <span className="text-xs font-semibold bg-gray-100 text-gray-600 px-2 py-1 rounded border border-gray-300">
-                        📅 Abertura: {formatarData(empresa.data_inicio_atividade)}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="text-left sm:text-right mt-4 sm:mt-0 flex flex-col items-start sm:items-end w-full sm:w-auto">
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold mb-2 ${
-                      empresa.situacao_cadastral === '02' ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'
-                    }`}>
-                      {empresa.situacao_cadastral === '02' ? 'ATIVA' : 'INATIVA'}
-                    </span>
-                    <p className="text-xs text-gray-500 font-medium flex items-center gap-1">
-                      📍 {empresa.municipio} / {empresa.uf}
-                    </p>
-                  </div>
+                {/* Status e Data */}
+                <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 text-right min-w-[120px]">
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                    empresa.situacao_cadastral === '02' 
+                      ? 'bg-green-50 text-green-700 border-green-200' 
+                      : 'bg-red-50 text-red-700 border-red-200'
+                  }`}>
+                    {empresa.situacao_cadastral === '02' ? 'ATIVA' : 'INATIVA'}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    Desde {formatarData(empresa.data_inicio_atividade)}
+                  </span>
                 </div>
+
               </div>
             </Link>
           ))}
 
-          {/* MENSAGEM VAZIA */}
-          {buscou && !loading && resultados.length === 0 && !avisoMuitosResultados.show && (
-            <div className="text-center py-16 bg-white rounded-xl border-2 border-dashed border-gray-300">
-              <div className="text-4xl mb-4">📂</div>
-              <p className="text-gray-500 text-lg font-medium">Nenhum resultado encontrado.</p>
-              <p className="text-sm text-gray-400 mt-2">Tente remover alguns filtros ou mudar a data.</p>
+          {/* Empty State */}
+          {buscou && !loading && resultados.length === 0 && !erro && (
+            <div className="text-center py-12 bg-white rounded-xl border border-dashed border-gray-300">
+              <div className="text-4xl mb-2">🤷‍♂️</div>
+              <h3 className="text-gray-800 font-bold">Nenhum resultado</h3>
+              <p className="text-gray-500 text-sm">Tente ajustar os filtros ou verificar a grafia.</p>
             </div>
           )}
+
+          {/* Skeleton Loading */}
+          {loading && (
+            [1,2,3].map(i => (
+              <div key={i} className="bg-white p-5 rounded-xl border border-gray-100 animate-pulse flex justify-between">
+                <div className="space-y-3 w-2/3">
+                  <div className="h-5 bg-gray-200 rounded w-3/4"></div>
+                  <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                </div>
+                <div className="space-y-3 w-24 flex flex-col items-end">
+                  <div className="h-6 bg-gray-200 rounded w-full"></div>
+                  <div className="h-3 bg-gray-200 rounded w-2/3"></div>
+                </div>
+              </div>
+            ))
+          )}
+
         </div>
 
-        {/* PAGINAÇÃO */}
-        {totalPaginas > 1 && !avisoMuitosResultados.show && (
-          <div className="flex justify-center items-center gap-4 mt-10">
+        {/* Paginação */}
+        {totalResultados > 10 && (
+          <div className="mt-8 flex justify-center gap-4">
             <button
-              onClick={() => mudarPagina(paginaAtual - 1)}
+              onClick={() => realizarBusca(paginaAtual - 1)}
               disabled={paginaAtual === 1 || loading}
-              className="px-4 py-2 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 text-gray-700 transition font-medium"
+              className="px-4 py-2 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 text-sm font-medium text-gray-700"
             >
-              ← Anterior
+              Anterior
             </button>
-            
-            <span className="text-gray-700 font-semibold">
-              {paginaAtual} / {totalPaginas}
+            <span className="px-4 py-2 bg-gray-100 rounded text-sm font-bold text-gray-700">
+              {paginaAtual}
             </span>
-
             <button
-              onClick={() => mudarPagina(paginaAtual + 1)}
-              disabled={paginaAtual === totalPaginas || loading}
-              className="px-4 py-2 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 text-gray-700 transition font-medium"
+              onClick={() => realizarBusca(paginaAtual + 1)}
+              disabled={loading || resultados.length < 10}
+              className="px-4 py-2 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 text-sm font-medium text-gray-700"
             >
-              Próxima →
+              Próxima
             </button>
           </div>
         )}
-      </div>
+
+      </main>
     </div>
   );
 }

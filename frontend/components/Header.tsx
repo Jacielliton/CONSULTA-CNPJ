@@ -34,10 +34,10 @@ export default function Header() {
         
         {userName && (
           <nav className="hidden md:flex gap-6 text-sm font-medium text-gray-600">
-            <Link href="/" className={`hover:text-blue-600 ${pathname === '/' ? 'text-blue-600' : ''}`}>Dashboard</Link>
-            <Link href="/consulta-simples" className={`hover:text-blue-600 ${pathname.includes('consulta') ? 'text-blue-600' : ''}`}>Consulta Simples</Link>
-            <Link href="/pesquisa-avancada" className={`hover:text-blue-600 ${pathname.includes('pesquisa') ? 'text-blue-600' : ''}`}>Avançada</Link>
-            <Link href="/licitacoes" className={`hover:text-blue-600 ${pathname.includes('licitacoes') ? 'text-blue-600' : ''}`}>Licitações</Link>
+            <Link href="/dashboard" className={`hover:text-blue-600 ${pathname === '/' ? 'text-blue-600' : ''}`}>Dashboard</Link>
+            <Link href="/consulta-simples" className={`hover:text-blue-600 ${pathname.includes('consulta') ? 'text-blue-600' : ''}`}>Consulta CNPJ Simples</Link>
+            <Link href="/pesquisa-avancada" className={`hover:text-blue-600 ${pathname.includes('pesquisa') ? 'text-blue-600' : ''}`}>Consulta CNPJ Avançada</Link>
+            <Link href="/licitacoes" className={`hover:text-blue-600 ${pathname.includes('licitacoes') ? 'text-blue-600' : ''}`}>Buscar Licitações</Link>
           </nav>
         )}
       </div>

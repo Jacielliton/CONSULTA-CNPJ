@@ -19,9 +19,9 @@ def criar_tabelas():
         engine = get_engine()
         
         with engine.connect() as conn:
-            print("[*] Criando tabelas principais...")
+            print("[*] Verificando tabelas...")
             
-            # 1. Tabelas Principais (Já existiam)
+            # 1. Tabelas Principais
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS empresas (
                     cnpj_basico VARCHAR(8),
@@ -85,8 +85,14 @@ def criar_tabelas():
                 );
             """))
 
-            # 2. Tabelas de Referência (NOVAS)
-            print("[*] Criando tabelas de referência (CNAE, Natureza, Município)...")
+            # 2. Tabelas de Referência
+            # --- TABELA QUE FALTAVA ---
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS qualificacoes (
+                    codigo VARCHAR(4),
+                    descricao TEXT
+                );
+            """))
             
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS cnaes (
@@ -109,7 +115,7 @@ def criar_tabelas():
                 );
             """))
             
-            # ADICIONE ISTO NA FUNÇÃO criar_tabelas(), logo após criar a tabela socios:
+            # 3. Usuários
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS users (
                     id SERIAL PRIMARY KEY,
@@ -117,18 +123,24 @@ def criar_tabelas():
                     email TEXT UNIQUE NOT NULL,
                     senha_hash TEXT NOT NULL,
                     contato TEXT,
+                    is_admin BOOLEAN DEFAULT FALSE,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """))
-            print("[*] Tabela de usuários verificada.")
             
-            # Criação de Índices Básicos para as novas tabelas
-            print("[*] Criando índices das tabelas de referência...")
+            # Migração coluna admin
+            try:
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;"))
+                conn.commit()
+            except: pass
+
+            # Índices
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_qual_codigo ON qualificacoes (codigo);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_cnae_codigo ON cnaes (codigo);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_nat_codigo ON naturezas (codigo);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_mun_codigo ON municipios (codigo);"))
 
-        print("[SUCESSO] Estrutura do banco atualizada!")
+        print("[SUCESSO] Estrutura do banco corrigida (Tabela qualificacoes criada)!")
         
     except Exception as e:
         print(f"[X] Erro: {e}")

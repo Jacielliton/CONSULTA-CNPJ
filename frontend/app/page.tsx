@@ -1,10 +1,36 @@
 "use client";
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
 export default function Dashboard() {
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    // Verifica cookie para exibir botão admin
+    const checkAdmin = () => {
+      const adminCookie = document.cookie.split('; ').find(row => row.startsWith('is_admin='));
+      if (adminCookie && adminCookie.split('=')[1] === 'true') {
+        setIsAdmin(true);
+      }
+    };
+    checkAdmin();
+  }, []);
+
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6">
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 relative">
       
+      {/* Botão Admin (Só aparece se logado como Admin) */}
+      {isAdmin && (
+        <div className="absolute top-4 right-4 z-10">
+          <Link 
+            href="/admin" 
+            className="flex items-center gap-2 text-gray-500 hover:text-blue-700 font-medium transition px-3 py-2 rounded hover:bg-gray-100"
+          >
+            ⚙️ Painel Admin
+          </Link>
+        </div>
+      )}
+
       <div className="text-center mb-12">
         <h1 className="text-4xl font-extrabold text-blue-900 mb-4">Plataforma de Inteligência</h1>
         <p className="text-gray-600 max-w-xl mx-auto">
@@ -38,7 +64,7 @@ export default function Dashboard() {
             </div>
             <h2 className="text-xl font-bold text-gray-800 mb-3 group-hover:text-purple-600 transition">Consulta Avançada</h2>
             <p className="text-gray-500 text-sm flex-grow">
-              Filtros detalhados por Estado, Município, Situação Cadastral, Data de Abertura e CNAE. Exporte relatórios em CSV.
+              Filtros detalhados por Capital Social, Cidade, Situação Cadastral e CNAE. Exportação completa para Excel/CSV.
             </p>
             <span className="text-purple-600 font-semibold text-sm mt-6 flex items-center gap-2">
               Acessar Ferramenta →
@@ -63,13 +89,6 @@ export default function Dashboard() {
         </Link>
 
       </div>
-
-      <div className="mt-16 text-center">
-        <Link href="/admin" className="text-gray-400 hover:text-gray-600 text-sm font-medium transition">
-          ⚙️ Acesso ao Painel Administrativo
-        </Link>
-      </div>
-
     </div>
   );
 }

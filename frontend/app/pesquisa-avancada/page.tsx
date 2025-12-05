@@ -2,7 +2,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import Link from 'next/link';
 
-// Configuração de API
+// API Configuration
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 interface Empresa {
@@ -15,6 +15,7 @@ interface Empresa {
   municipio: string;
   uf: string;
   data_inicio_atividade: string;
+  capital_social?: string; // New field from API
 }
 
 interface Cidade {
@@ -29,7 +30,9 @@ export default function PesquisaAvancada() {
     municipio: '', 
     situacao: '02',
     dataInicio: '',
-    dataFim: ''
+    dataFim: '',
+    capitalMin: '', // NEW
+    capitalMax: ''  // NEW
   });
 
   const [cidades, setCidades] = useState<Cidade[]>([]);
@@ -42,7 +45,7 @@ export default function PesquisaAvancada() {
   const [buscou, setBuscou] = useState(false);
   const [exportando, setExportando] = useState(false);
 
-  // --- EFEITO: Carregar Cidades quando UF muda ---
+  // --- EFFECT: Load Cities when UF changes ---
   useEffect(() => {
     async function carregarCidades() {
       if (!filtros.uf) {
@@ -77,6 +80,14 @@ export default function PesquisaAvancada() {
     return `${d.substr(6,2)}/${d.substr(4,2)}/${d.substr(0,4)}`;
   }
 
+  const formatarDinheiro = (valor: any) => {
+    if (!valor) return "R$ 0,00";
+    // Convert string "1000.00" to number if necessary, handling possible API formats
+    const num = parseFloat(String(valor).replace(',', '.'));
+    if (isNaN(num)) return valor;
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
+  }
+
   const construirParams = (p = 1) => {
     const params = new URLSearchParams();
     if(filtros.termo) params.append('q', filtros.termo);
@@ -85,6 +96,11 @@ export default function PesquisaAvancada() {
     if(filtros.situacao) params.append('situacao', filtros.situacao);
     if(filtros.dataInicio) params.append('data_inicio', filtros.dataInicio);
     if(filtros.dataFim) params.append('data_fim', filtros.dataFim);
+    
+    // NEW: Add Capital Filters
+    if(filtros.capitalMin) params.append('capital_min', filtros.capitalMin);
+    if(filtros.capitalMax) params.append('capital_max', filtros.capitalMax);
+
     return params;
   }
 
@@ -115,12 +131,10 @@ export default function PesquisaAvancada() {
     setExportando(true);
     try {
         const params = construirParams();
-        // Redireciona o navegador para baixar o arquivo
         window.location.href = `${API_BASE}/exportar?${params.toString()}`;
     } catch (e) {
         alert("Erro ao iniciar download.");
     } finally {
-        // Pequeno delay para liberar o botão
         setTimeout(() => setExportando(false), 2000);
     }
   };
@@ -131,7 +145,11 @@ export default function PesquisaAvancada() {
   };
 
   const limparFiltros = () => {
-    setFiltros({ termo: '', uf: '', municipio: '', situacao: '', dataInicio: '', dataFim: '' });
+    setFiltros({ 
+      termo: '', uf: '', municipio: '', situacao: '', 
+      dataInicio: '', dataFim: '',
+      capitalMin: '', capitalMax: ''
+    });
     setCidades([]);
     setResultados([]);
     setBuscou(false);
@@ -153,6 +171,7 @@ export default function PesquisaAvancada() {
           <form onSubmit={handleSubmit} className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 sticky top-24">
             <h2 className="font-semibold text-gray-700 mb-4 border-b pb-2">Filtros</h2>
             
+            {/* Termo */}
             <div className="mb-4">
               <label className="block text-xs font-bold text-gray-500 mb-1">Palavra-chave</label>
               <input 
@@ -164,6 +183,7 @@ export default function PesquisaAvancada() {
               />
             </div>
 
+            {/* Situação */}
             <div className="mb-4">
               <label className="block text-xs font-bold text-gray-500 mb-1">Situação Cadastral</label>
               <select 
@@ -175,6 +195,7 @@ export default function PesquisaAvancada() {
               </select>
             </div>
 
+            {/* Localização */}
             <div className="mb-4">
               <label className="block text-xs font-bold text-gray-500 mb-1">Estado (UF)</label>
               <select 
@@ -194,7 +215,7 @@ export default function PesquisaAvancada() {
             <div className="mb-4">
               <label className="block text-xs font-bold text-gray-500 mb-1">
                 Município 
-                {loadingCidades && <span className="text-blue-500 ml-1 animate-pulse">(Carregando...)</span>}
+                {loadingCidades && <span className="text-blue-500 ml-1 animate-pulse">(...)</span>}
               </label>
               <select 
                 className="w-full p-2 border rounded text-sm text-black bg-white disabled:bg-gray-100"
@@ -211,7 +232,8 @@ export default function PesquisaAvancada() {
               </select>
             </div>
 
-            <div className="mb-6">
+            {/* Datas */}
+            <div className="mb-4">
               <label className="block text-xs font-bold text-gray-500 mb-1">Data de Abertura</label>
               <div className="flex gap-2 items-center">
                 <input 
@@ -226,6 +248,28 @@ export default function PesquisaAvancada() {
                   className="w-full p-1 border rounded text-xs text-black"
                   value={filtros.dataFim}
                   onChange={e => setFiltros({...filtros, dataFim: e.target.value})}
+                />
+              </div>
+            </div>
+
+            {/* Capital Social */}
+            <div className="mb-6 border-t pt-4">
+              <label className="block text-xs font-bold text-gray-500 mb-1">Capital Social (R$)</label>
+              <div className="flex gap-2 items-center">
+                <input 
+                  type="number" 
+                  placeholder="Mínimo"
+                  className="w-full p-1 border rounded text-xs text-black"
+                  value={filtros.capitalMin}
+                  onChange={e => setFiltros({...filtros, capitalMin: e.target.value})}
+                />
+                <span className="text-gray-400">-</span>
+                <input 
+                  type="number" 
+                  placeholder="Máximo"
+                  className="w-full p-1 border rounded text-xs text-black"
+                  value={filtros.capitalMax}
+                  onChange={e => setFiltros({...filtros, capitalMax: e.target.value})}
                 />
               </div>
             </div>
@@ -280,12 +324,16 @@ export default function PesquisaAvancada() {
                       {empresa.razao_social || empresa.nome_fantasia}
                     </h3>
                   </Link>
-                  <div className="text-sm text-gray-500 mt-1 flex gap-3">
+                  <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-3">
                     <span className="font-mono bg-gray-100 px-1 rounded">
                       {empresa.cnpj_basico}.{empresa.cnpj_ordem}/{empresa.cnpj_dv}
                     </span>
                     <span>📍 {empresa.uf}</span>
                     <span>📅 {formatarData(empresa.data_inicio_atividade)}</span>
+                    {/* Display Capital if available */}
+                    {empresa.capital_social && (
+                        <span className="text-green-600 font-medium">💰 {formatarDinheiro(empresa.capital_social)}</span>
+                    )}
                   </div>
                 </div>
 
@@ -313,7 +361,7 @@ export default function PesquisaAvancada() {
               </div>
             )}
              
-            {loading && resultados.length === 0 && (
+            {loading && (
                [1,2,3].map(n => <div key={n} className="h-24 bg-gray-200 rounded animate-pulse"></div>)
             )}
           </div>

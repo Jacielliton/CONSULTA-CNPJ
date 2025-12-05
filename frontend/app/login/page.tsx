@@ -25,14 +25,14 @@ export default function Login() {
       });
 
       const data = await res.json();
-
       if (!res.ok) throw new Error(data.detail || "Erro ao entrar");
 
-      // Salva token no Cookie (expira em 1 dia)
+      // Salva token e flag de admin
       Cookies.set("auth_token", data.access_token, { expires: 1 });
       Cookies.set("user_name", data.user_name, { expires: 1 });
+      Cookies.set("is_admin", data.is_admin ? "true" : "false", { expires: 1 }); // NOVO
 
-      router.push("/dashboard"); // Vai para o Dashboard
+      router.push("/dashboard");
     } catch (err: any) {
       setError(err.message);
     } finally {
