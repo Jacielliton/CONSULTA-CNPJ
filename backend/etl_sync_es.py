@@ -8,27 +8,31 @@ from elasticsearch import Elasticsearch, helpers
 DB_URL = "postgresql+pg8000://user_cnpj:password_cnpj@127.0.0.1:5433/cnpj_dados"
 ES_HOST = "http://localhost:9200"
 INDEX_NAME = "empresas-index"
-
-# Batch de 1000 para manter Python leve
 BATCH_SIZE = 1000 
 
 def get_postgres_engine():
-    # Stream results é obrigatório na VPS
     return create_engine(DB_URL, execution_options={"stream_results": True})
 
+def limpar_capital(valor_str):
+    """Converte '10000,00' para 10000.00 (float)"""
+    if not valor_str: return 0.0
+    try:
+        # Remove caracteres estranhos e troca vírgula por ponto
+        limpo = str(valor_str).replace('.', '').replace(',', '.')
+        return float(limpo)
+    except:
+        return 0.0
+
 def criar_indice(es):
-    # Deleta se existir para garantir mapping limpo (opcional, cuidado em prod)
-    # es.indices.delete(index=INDEX_NAME, ignore=[400, 404]) 
-    
     if es.indices.exists(index=INDEX_NAME):
-        print(f"[*] Índice '{INDEX_NAME}' já existe.")
+        print(f"[*] Índice '{INDEX_NAME}' já existe. (Recomendado apagar para re-mapear se tiver erro de tipo)")
         return
 
     mapping = {
         "settings": {
             "number_of_shards": 1,
-            "number_of_replicas": 0, # Importante para economizar disco da VPS
-            "refresh_interval": "60s" # Menos I/O no disco
+            "number_of_replicas": 0,
+            "refresh_interval": "60s"
         },
         "mappings": {
             "properties": {
@@ -38,12 +42,13 @@ def criar_indice(es):
                 "uf": {"type": "keyword"},
                 "municipio": {"type": "keyword"},
                 "situacao_cadastral": {"type": "keyword"},
-                "data_inicio_atividade": {"type": "keyword"} # Keyword para busca exata YYYYMMDD
+                "data_inicio_atividade": {"type": "keyword"},
+                "capital_social": {"type": "float"}  # FORÇA TIPO FLOAT
             }
         }
     }
     es.indices.create(index=INDEX_NAME, body=mapping)
-    print(f"[OK] Índice '{INDEX_NAME}' criado.")
+    print(f"[OK] Índice '{INDEX_NAME}' criado com mapping correto.")
 
 def gerar_dados(conn):
     print("[*] Iniciando leitura do PostgreSQL...")
@@ -55,12 +60,12 @@ def gerar_dados(conn):
             est.municipio,
             est.situacao_cadastral,
             est.data_inicio_atividade,
-            emp.razao_social
+            emp.razao_social,
+            emp.capital_social -- Trazendo o campo
         FROM estabelecimentos est
         LEFT JOIN empresas emp ON est.cnpj_basico = emp.cnpj_basico
     """)
     
-    # yield_per garante que o driver não traga milhões de linhas pra RAM
     result = conn.execution_options(yield_per=BATCH_SIZE).execute(sql)
     
     for row in result:
@@ -74,7 +79,8 @@ def gerar_dados(conn):
                 "uf": row[2],
                 "municipio": row[3],
                 "situacao_cadastral": row[4],
-                "data_inicio_atividade": row[5]
+                "data_inicio_atividade": row[5],
+                "capital_social": limpar_capital(row[7]) # Converte aqui
             }
         }
         yield doc
@@ -87,12 +93,15 @@ def sincronizar():
         print("[Erro] Elasticsearch não encontrado.")
         return
 
+    # Opcional: Apagar índice antigo para garantir novo mapeamento (float)
+    # es.indices.delete(index=INDEX_NAME, ignore=[400, 404])
+    
     criar_indice(es)
     
     start_time = time.time()
     total = 0
     
-    print("--- INICIANDO SINCRONIZAÇÃO (VPS MODE) ---")
+    print("--- INICIANDO SINCRONIZAÇÃO DE CAPITAL SOCIAL ---")
 
     try:
         with engine.connect() as conn:
@@ -101,15 +110,14 @@ def sincronizar():
                 actions=gerar_dados(conn),
                 chunk_size=BATCH_SIZE,
                 max_retries=5,
-                raise_on_error=False,
-                request_timeout=60
+                raise_on_error=False
             ):
                 if success:
                     total += 1
                     if total % 5000 == 0:
                         sys.stdout.write(f"\rProcessados: {total:,}")
                         sys.stdout.flush()
-                        gc.collect() # Limpeza periódica
+                        gc.collect()
                 
     except KeyboardInterrupt:
         print("\n[!] Parado pelo usuário.")

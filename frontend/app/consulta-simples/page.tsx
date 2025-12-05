@@ -219,6 +219,7 @@ export default function ConsultaSimples() {
             <Link 
               href={`/empresa/${empresa.cnpj_basico}${empresa.cnpj_ordem}${empresa.cnpj_dv}`} 
               key={index}
+              target="_blank"
               className="block group"
             >
               <div className="bg-white p-5 rounded-xl border border-gray-200 hover:border-blue-300 hover:shadow-md transition duration-200 flex flex-col sm:flex-row justify-between gap-4">

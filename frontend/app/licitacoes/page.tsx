@@ -97,17 +97,8 @@ export default function LicitacoesPage() {
     const formatDate = (d: string) => { if(!d) return '--/--'; const [y,m,day] = d.split('-'); return `${day}/${m}`; };
 
     return (
-        <div className="min-h-screen bg-slate-50 flex flex-col">
+        <div className="min-h-screen bg-slate-50 flex flex-col">          
             
-            {/* Header */}
-            <header className="bg-white border-b px-6 py-4 flex justify-between items-center sticky top-0 z-20">
-                <div>
-                    <h1 className="text-xl font-bold text-blue-800 flex items-center gap-2">
-                        📜 Monitor de Licitações (MA)
-                    </h1>
-                    <p className="text-xs text-gray-500">Acompanhe editais do TCE e Diário Oficial</p>
-                </div>                
-            </header>
 
             <div className="flex flex-1">
                 {/* Sidebar */}

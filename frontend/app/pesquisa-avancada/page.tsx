@@ -2,7 +2,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import Link from 'next/link';
 
-// API Configuration
+// Configuração de API
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 interface Empresa {
@@ -15,7 +15,8 @@ interface Empresa {
   municipio: string;
   uf: string;
   data_inicio_atividade: string;
-  capital_social?: string; // New field from API
+  capital_social?: string;
+  porte_empresa?: string;
 }
 
 interface Cidade {
@@ -24,20 +25,14 @@ interface Cidade {
 }
 
 export default function PesquisaAvancada() {
+  // --- ESTADOS ---
   const [filtros, setFiltros] = useState({
-    termo: '',
-    uf: '',
-    municipio: '', 
-    situacao: '02',
-    dataInicio: '',
-    dataFim: '',
-    capitalMin: '', // NEW
-    capitalMax: ''  // NEW
+    termo: '', uf: '', municipio: '', situacao: '02', porte: '',
+    natureza: '', dataInicio: '', dataFim: '', capitalMin: '', capitalMax: ''
   });
 
   const [cidades, setCidades] = useState<Cidade[]>([]);
   const [loadingCidades, setLoadingCidades] = useState(false);
-
   const [resultados, setResultados] = useState<Empresa[]>([]);
   const [total, setTotal] = useState(0);
   const [pagina, setPagina] = useState(1);
@@ -45,49 +40,47 @@ export default function PesquisaAvancada() {
   const [buscou, setBuscou] = useState(false);
   const [exportando, setExportando] = useState(false);
 
-  // --- EFFECT: Load Cities when UF changes ---
+  // --- EFEITO: Cidades ---
   useEffect(() => {
     async function carregarCidades() {
-      if (!filtros.uf) {
-        setCidades([]);
-        return;
-      }
+      if (!filtros.uf) { setCidades([]); return; }
       setLoadingCidades(true);
       try {
         const res = await fetch(`${API_BASE}/auxiliar/cidades/${filtros.uf}`);
         const data = await res.json();
         setCidades(data);
-      } catch (e) {
-        console.error("Erro ao carregar cidades", e);
-      } finally {
-        setLoadingCidades(false);
-      }
+      } catch (e) { console.error(e); } 
+      finally { setLoadingCidades(false); }
     }
     carregarCidades();
   }, [filtros.uf]);
 
+  // --- OPÇÕES ---
   const situacoes = [
-    { cod: "", label: "Todas" },
-    { cod: "02", label: "Ativa" },
-    { cod: "08", label: "Baixada" },
-    { cod: "04", label: "Inapta" },
-    { cod: "03", label: "Suspensa" },
-    { cod: "01", label: "Nula" }
+    { cod: "", label: "Todas" }, { cod: "02", label: "Ativa" }, { cod: "08", label: "Baixada" },
+    { cod: "04", label: "Inapta" }, { cod: "03", label: "Suspensa" }, { cod: "01", label: "Nula" }
+  ];
+  
+  const portes = [
+    { cod: "", label: "Todos" }, { cod: "01", label: "ME - Micro Empresa" }, 
+    { cod: "03", label: "EPP - Pequeno Porte" }, { cod: "05", label: "Demais" }
   ];
 
+  // --- HELPERS ---
   const formatarData = (d: string) => {
     if(!d || d.length !== 8) return d;
     return `${d.substr(6,2)}/${d.substr(4,2)}/${d.substr(0,4)}`;
   }
 
-  const formatarDinheiro = (valor: any) => {
-    if (!valor) return "R$ 0,00";
-    // Convert string "1000.00" to number if necessary, handling possible API formats
-    const num = parseFloat(String(valor).replace(',', '.'));
-    if (isNaN(num)) return valor;
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(num);
+  const formatarDinheiro = (v: any) => {
+    if (!v) return "-";
+    const n = parseFloat(String(v).replace(',', '.'));
+    return isNaN(n) ? v : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
   }
 
+  const formatarCNPJ = (b: string, o: string, d: string) => `${b}.${o}/${d}`;
+
+  // --- BUSCA ---
   const construirParams = (p = 1) => {
     const params = new URLSearchParams();
     if(filtros.termo) params.append('q', filtros.termo);
@@ -96,11 +89,9 @@ export default function PesquisaAvancada() {
     if(filtros.situacao) params.append('situacao', filtros.situacao);
     if(filtros.dataInicio) params.append('data_inicio', filtros.dataInicio);
     if(filtros.dataFim) params.append('data_fim', filtros.dataFim);
-    
-    // NEW: Add Capital Filters
     if(filtros.capitalMin) params.append('capital_min', filtros.capitalMin);
     if(filtros.capitalMax) params.append('capital_max', filtros.capitalMax);
-
+    if(filtros.porte) params.append('porte', filtros.porte);
     return params;
   }
 
@@ -108,23 +99,16 @@ export default function PesquisaAvancada() {
     setLoading(true);
     setBuscou(true);
     setPagina(p);
-    
     try {
       const params = construirParams(p);
       params.append('page', p.toString());
       params.append('limit', '20');
-
       const res = await fetch(`${API_BASE}/buscar?${params.toString()}`);
       const data = await res.json();
-      
       setResultados(data.items || []);
       setTotal(data.total || 0);
-
-    } catch (error) {
-      alert("Erro ao buscar dados. Verifique se a API está rodando.");
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { alert("Erro ao buscar dados."); } 
+    finally { setLoading(false); }
   };
 
   const handleExportar = async () => {
@@ -132,261 +116,198 @@ export default function PesquisaAvancada() {
     try {
         const params = construirParams();
         window.location.href = `${API_BASE}/exportar?${params.toString()}`;
-    } catch (e) {
-        alert("Erro ao iniciar download.");
-    } finally {
-        setTimeout(() => setExportando(false), 2000);
-    }
-  };
-
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    buscar(1);
+    } catch (e) { alert("Erro exportação"); } 
+    finally { setTimeout(() => setExportando(false), 2000); }
   };
 
   const limparFiltros = () => {
-    setFiltros({ 
-      termo: '', uf: '', municipio: '', situacao: '', 
-      dataInicio: '', dataFim: '',
-      capitalMin: '', capitalMax: ''
-    });
-    setCidades([]);
+    setFiltros({ termo: '', uf: '', municipio: '', situacao: '', porte: '', natureza: '', dataInicio: '', dataFim: '', capitalMin: '', capitalMax: '' });
     setResultados([]);
     setBuscou(false);
   };
 
+  // ESTILO PADRÃO DOS CAMPOS (Borda Escura Forçada)
+  const inputStyle = "w-full p-2.5 bg-white border border-gray-400 rounded-md text-sm text-gray-900 focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none transition placeholder-gray-500 shadow-sm";
+  const labelStyle = "block text-xs font-bold text-gray-600 uppercase mb-1";
+
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b py-4 px-8 flex justify-between items-center sticky top-0 z-10">
-        <h1 className="text-xl font-bold text-blue-800 flex items-center gap-2">
-          🔬 Pesquisa Avançada
-        </h1>
-        <Link href="/" className="text-sm text-gray-500 hover:text-blue-600">
-          ← Voltar para Home
-        </Link>
-      </header>
-
-      <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-4 gap-6">
+    <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-gray-900">
+      <main className="flex-1 p-6 max-w-[1600px] mx-auto w-full grid grid-cols-1 lg:grid-cols-4 gap-6">
+        
+        {/* --- SIDEBAR DE FILTROS --- */}
         <aside className="lg:col-span-1">
-          <form onSubmit={handleSubmit} className="bg-white p-5 rounded-lg shadow-sm border border-gray-200 sticky top-24">
-            <h2 className="font-semibold text-gray-700 mb-4 border-b pb-2">Filtros</h2>
+          <form onSubmit={(e) => { e.preventDefault(); buscar(1); }} className="bg-white p-6 rounded-lg shadow-md border border-gray-300 sticky top-24">
+            <h2 className="font-bold text-gray-800 mb-5 border-b border-gray-200 pb-2 text-lg">Filtros</h2>
             
-            {/* Termo */}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-gray-500 mb-1">Palavra-chave</label>
-              <input 
-                type="text" 
-                placeholder="Nome, Razão ou CNPJ"
-                className="w-full p-2 border rounded text-sm text-black"
-                value={filtros.termo}
-                onChange={e => setFiltros({...filtros, termo: e.target.value})}
-              />
-            </div>
-
-            {/* Situação */}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-gray-500 mb-1">Situação Cadastral</label>
-              <select 
-                className="w-full p-2 border rounded text-sm text-black bg-white"
-                value={filtros.situacao}
-                onChange={e => setFiltros({...filtros, situacao: e.target.value})}
-              >
-                {situacoes.map(s => <option key={s.cod} value={s.cod}>{s.label}</option>)}
-              </select>
-            </div>
-
-            {/* Localização */}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-gray-500 mb-1">Estado (UF)</label>
-              <select 
-                className="w-full p-2 border rounded text-sm text-black bg-white"
-                value={filtros.uf}
-                onChange={e => {
-                  setFiltros({...filtros, uf: e.target.value, municipio: ''});
-                }}
-              >
-                <option value="">Selecione...</option>
-                {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => (
-                  <option key={uf} value={uf}>{uf}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-gray-500 mb-1">
-                Município 
-                {loadingCidades && <span className="text-blue-500 ml-1 animate-pulse">(...)</span>}
-              </label>
-              <select 
-                className="w-full p-2 border rounded text-sm text-black bg-white disabled:bg-gray-100"
-                value={filtros.municipio}
-                onChange={e => setFiltros({...filtros, municipio: e.target.value})}
-                disabled={!filtros.uf || loadingCidades}
-              >
-                <option value="">Todas as cidades</option>
-                {cidades.map(c => (
-                  <option key={c.codigo} value={c.codigo}>
-                    {c.descricao}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Datas */}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-gray-500 mb-1">Data de Abertura</label>
-              <div className="flex gap-2 items-center">
-                <input 
-                  type="date" 
-                  className="w-full p-1 border rounded text-xs text-black"
-                  value={filtros.dataInicio}
-                  onChange={e => setFiltros({...filtros, dataInicio: e.target.value})}
-                />
-                <span className="text-gray-400">-</span>
-                <input 
-                  type="date" 
-                  className="w-full p-1 border rounded text-xs text-black"
-                  value={filtros.dataFim}
-                  onChange={e => setFiltros({...filtros, dataFim: e.target.value})}
-                />
+            <div className="space-y-5">
+              
+              {/* Palavra Chave */}
+              <div>
+                <label className={labelStyle}>Palavra-chave</label>
+                <input type="text" className={inputStyle} placeholder="Nome, Razão ou CNPJ" value={filtros.termo} onChange={e => setFiltros({...filtros, termo: e.target.value})} />
               </div>
-            </div>
 
-            {/* Capital Social */}
-            <div className="mb-6 border-t pt-4">
-              <label className="block text-xs font-bold text-gray-500 mb-1">Capital Social (R$)</label>
-              <div className="flex gap-2 items-center">
-                <input 
-                  type="number" 
-                  placeholder="Mínimo"
-                  className="w-full p-1 border rounded text-xs text-black"
-                  value={filtros.capitalMin}
-                  onChange={e => setFiltros({...filtros, capitalMin: e.target.value})}
-                />
-                <span className="text-gray-400">-</span>
-                <input 
-                  type="number" 
-                  placeholder="Máximo"
-                  className="w-full p-1 border rounded text-xs text-black"
-                  value={filtros.capitalMax}
-                  onChange={e => setFiltros({...filtros, capitalMax: e.target.value})}
-                />
+              {/* Situação */}
+              <div>
+                <label className={labelStyle}>Situação Cadastral</label>
+                <select className={inputStyle} value={filtros.situacao} onChange={e => setFiltros({...filtros, situacao: e.target.value})}>
+                  {situacoes.map(s => <option key={s.cod} value={s.cod}>{s.label}</option>)}
+                </select>
               </div>
-            </div>
 
-            <div className="space-y-2">
-                <button 
-                type="submit" 
-                disabled={loading}
-                className="w-full bg-blue-600 text-white font-bold py-2 rounded hover:bg-blue-700 transition"
-                >
-                {loading ? "Filtrando..." : "Aplicar Filtros"}
+              {/* Porte */}
+              <div>
+                <label className={labelStyle}>Porte da Empresa</label>
+                <select className={inputStyle} value={filtros.porte} onChange={e => setFiltros({...filtros, porte: e.target.value})}>
+                  {portes.map(p => <option key={p.cod} value={p.cod}>{p.label}</option>)}
+                </select>
+              </div>
+
+              {/* Estado */}
+              <div>
+                <label className={labelStyle}>Estado (UF)</label>
+                <select className={inputStyle} value={filtros.uf} onChange={e => setFiltros({...filtros, uf: e.target.value, municipio: ''})}>
+                  <option value="">-- Todos --</option>
+                  {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(uf => <option key={uf} value={uf}>{uf}</option>)}
+                </select>
+              </div>
+
+              {/* Município */}
+              <div>
+                <label className={labelStyle}>Município {loadingCidades && '...'}</label>
+                <select className={inputStyle} value={filtros.municipio} onChange={e => setFiltros({...filtros, municipio: e.target.value})} disabled={!filtros.uf}>
+                  <option value="">Todas as cidades</option>
+                  {cidades.map(c => <option key={c.codigo} value={c.codigo}>{c.descricao}</option>)}
+                </select>
+              </div>
+
+              {/* Datas */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={labelStyle}>Início (Abertura)</label>
+                  <input type="date" className={inputStyle} value={filtros.dataInicio} onChange={e => setFiltros({...filtros, dataInicio: e.target.value})} />
+                </div>
+                <div>
+                  <label className={labelStyle}>Fim (Abertura)</label>
+                  <input type="date" className={inputStyle} value={filtros.dataFim} onChange={e => setFiltros({...filtros, dataFim: e.target.value})} />
+                </div>
+              </div>
+
+              {/* Capital Social */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={labelStyle}>Capital Min (R$)</label>
+                  <input type="number" className={inputStyle} placeholder="0" value={filtros.capitalMin} onChange={e => setFiltros({...filtros, capitalMin: e.target.value})} />
+                </div>
+                <div>
+                  <label className={labelStyle}>Capital Max (R$)</label>
+                  <input type="number" className={inputStyle} placeholder="Max" value={filtros.capitalMax} onChange={e => setFiltros({...filtros, capitalMax: e.target.value})} />
+                </div>
+              </div>
+
+              {/* BOTÕES */}
+              <div className="pt-4 space-y-3 border-t border-gray-200 mt-2">
+                
+                {/* BOTÃO APLICAR (AZUL) */}
+                <button type="submit" disabled={loading} className="w-full bg-blue-700 hover:bg-blue-800 text-white font-bold py-3 rounded-md shadow transition flex justify-center items-center gap-2">
+                  {loading ? "Pesquisando..." : "🔍 Aplicar Filtros"}
                 </button>
                 
-                <button 
-                type="button" 
-                onClick={handleExportar}
-                disabled={exportando}
-                className="w-full bg-green-600 text-white font-bold py-2 rounded hover:bg-green-700 transition flex items-center justify-center gap-2"
-                >
-                {exportando ? "Baixando..." : "📥 Exportar CSV"}
-                </button>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* BOTÃO EXPORTAR (VERDE) */}
+                  <button type="button" onClick={handleExportar} disabled={exportando} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-md text-xs transition shadow">
+                    {exportando ? "..." : "📥 Exportar"}
+                  </button>
+                  
+                  {/* BOTÃO LIMPAR (VERMELHO) */}
+                  <button type="button" onClick={limparFiltros} className="bg-white border border-red-500 text-red-600 hover:bg-red-50 font-bold py-2 rounded-md text-xs transition shadow">
+                    Limpar
+                  </button>
+                </div>
+              </div>
 
-                <button 
-                type="button" 
-                onClick={limparFiltros}
-                className="w-full bg-gray-100 text-gray-600 py-2 rounded hover:bg-gray-200 transition text-sm"
-                >
-                Limpar
-                </button>
             </div>
           </form>
         </aside>
 
+        {/* --- TABELA DE RESULTADOS --- */}
         <section className="lg:col-span-3">
-          <div className="mb-4 flex justify-between items-end">
-            <div>
-              <h2 className="text-xl font-bold text-gray-800">Resultados</h2>
-              {buscou && (
-                <p className="text-sm text-gray-500">
-                  Encontrados <span className="font-bold text-black">{total}</span> registros
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {resultados.map((empresa, i) => (
-              <div key={i} className="bg-white p-4 rounded border hover:shadow-md transition flex justify-between items-center group">
-                <div>
-                  <Link href={`/empresa/${empresa.cnpj_basico}${empresa.cnpj_ordem}${empresa.cnpj_dv}`}>
-                    <h3 className="text-lg font-bold text-blue-700 hover:underline cursor-pointer">
-                      {empresa.razao_social || empresa.nome_fantasia}
-                    </h3>
-                  </Link>
-                  <div className="text-sm text-gray-500 mt-1 flex flex-wrap gap-3">
-                    <span className="font-mono bg-gray-100 px-1 rounded">
-                      {empresa.cnpj_basico}.{empresa.cnpj_ordem}/{empresa.cnpj_dv}
-                    </span>
-                    <span>📍 {empresa.uf}</span>
-                    <span>📅 {formatarData(empresa.data_inicio_atividade)}</span>
-                    {/* Display Capital if available */}
-                    {empresa.capital_social && (
-                        <span className="text-green-600 font-medium">💰 {formatarDinheiro(empresa.capital_social)}</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="text-right">
-                  <span className={`text-xs font-bold px-2 py-1 rounded ${
-                    empresa.situacao_cadastral === '02' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                  }`}>
-                    {empresa.situacao_cadastral === '02' ? 'ATIVA' : 'INATIVA'}
-                  </span>
-                  <div className="mt-2 opacity-0 group-hover:opacity-100 transition">
-                    <Link 
-                       href={`/empresa/${empresa.cnpj_basico}${empresa.cnpj_ordem}${empresa.cnpj_dv}`}
-                       className="text-sm text-blue-600 font-medium hover:text-blue-800"
-                    >
-                      Ver Detalhes →
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {buscou && !loading && resultados.length === 0 && (
-              <div className="text-center py-12 bg-white rounded border border-dashed">
-                <p className="text-gray-500">Nenhum resultado para os filtros selecionados.</p>
-              </div>
-            )}
-             
-            {loading && (
-               [1,2,3].map(n => <div key={n} className="h-24 bg-gray-200 rounded animate-pulse"></div>)
-            )}
-          </div>
-
-          {total > 20 && (
-            <div className="mt-8 flex justify-center gap-4">
-              <button 
-                disabled={pagina === 1 || loading}
-                onClick={() => buscar(pagina - 1)}
-                className="px-4 py-2 border bg-white rounded hover:bg-gray-50 disabled:opacity-50 text-black"
-              >
-                Anterior
-              </button>
-              <span className="py-2 px-4 bg-gray-100 rounded text-black font-bold">{pagina}</span>
-              <button 
-                disabled={resultados.length < 20 || loading}
-                onClick={() => buscar(pagina + 1)}
-                className="px-4 py-2 border bg-white rounded hover:bg-gray-50 disabled:opacity-50 text-black"
-              >
-                Próxima
-              </button>
+          
+          {buscou && (
+            <div className="flex justify-between items-center mb-4 px-1">
+              <h2 className="text-lg font-bold text-gray-800">
+                Resultados: <span className="text-blue-700">{total}</span>
+              </h2>
             </div>
           )}
 
+          {loading ? (
+            <div className="space-y-3">
+              {[1,2,3,4,5].map(i => <div key={i} className="h-16 bg-white border border-gray-300 rounded animate-pulse"/>)}
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-300 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm text-gray-700">
+                  <thead className="bg-gray-100 border-b border-gray-300 uppercase text-xs font-bold text-gray-600">
+                    <tr>
+                      <th className="px-4 py-3">Empresa</th>
+                      <th className="px-4 py-3">CNPJ</th>
+                      <th className="px-4 py-3">Cidade/UF</th>
+                      <th className="px-4 py-3">Abertura</th>
+                      <th className="px-4 py-3 text-right">Capital</th>
+                      <th className="px-4 py-3 text-center">Status</th>
+                      <th className="px-4 py-3 text-right">Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {resultados.length === 0 && buscou && (
+                      <tr><td colSpan={7} className="px-6 py-12 text-center text-gray-500">Nenhum resultado encontrado.</td></tr>
+                    )}
+                    {resultados.map((empresa, i) => (
+                      <tr key={i} className="hover:bg-blue-50 transition">
+                        <td className="px-4 py-3 max-w-[220px] truncate" title={empresa.razao_social}>
+                          <div className="font-bold text-gray-900">{empresa.nome_fantasia || empresa.razao_social}</div>
+                          <div className="text-xs text-gray-500">{empresa.razao_social}</div>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-gray-800 text-xs">
+                          {formatarCNPJ(empresa.cnpj_basico, empresa.cnpj_ordem, empresa.cnpj_dv)}
+                        </td>
+                        <td className="px-4 py-3 text-xs">{empresa.municipio}/{empresa.uf}</td>
+                        <td className="px-4 py-3 text-xs">{formatarData(empresa.data_inicio_atividade)}</td>
+                        <td className="px-4 py-3 text-right font-bold text-emerald-700 text-xs">{formatarDinheiro(empresa.capital_social)}</td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${empresa.situacao_cadastral === '02' ? 'bg-green-100 text-green-800 border-green-300' : 'bg-red-100 text-red-800 border-red-300'}`}>
+                            {empresa.situacao_cadastral === '02' ? 'ATIVA' : 'INATIVA'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <Link
+                            href={`/empresa/${empresa.cnpj_basico}${empresa.cnpj_ordem}${empresa.cnpj_dv}`}
+                            className="text-blue-700 hover:underline font-bold text-xs"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            VER DETALHES
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              
+              {total > 20 && (
+                <div className="px-4 py-3 border-t border-gray-300 bg-gray-50 flex justify-between items-center">
+                  <button onClick={() => buscar(pagina - 1)} disabled={pagina === 1} className="bg-white border border-gray-400 text-gray-700 px-3 py-1 rounded text-xs font-bold hover:bg-gray-100">Anterior</button>
+                  <span className="text-xs font-bold text-gray-600">Página {pagina}</span>
+                  <button onClick={() => buscar(pagina + 1)} disabled={resultados.length < 20} className="bg-white border border-gray-400 text-gray-700 px-3 py-1 rounded text-xs font-bold hover:bg-gray-100">Próxima</button>
+                </div>
+              )}
+            </div>
+          )}
         </section>
+
       </main>
     </div>
   );

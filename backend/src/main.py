@@ -242,7 +242,7 @@ def buscar_empresa(
         if data_fim: r["lte"] = data_fim.replace("-", "")
         filtros.append({"range": {"data_inicio_atividade": r}})
 
-    # Filtro Capital Social (Supondo mapeamento padrão onde números podem ser string ou float)
+    # Filtro Capital Social
     if capital_min is not None or capital_max is not None:
         cr = {}
         if capital_min is not None: cr["gte"] = capital_min
@@ -301,7 +301,6 @@ def exportar_dados(
     if data_inicio: cond.append("est.data_inicio_atividade >= :di"); p["di"] = data_inicio.replace("-", "")
     if data_fim: cond.append("est.data_inicio_atividade <= :df"); p["df"] = data_fim.replace("-", "")
     
-    # Filtro SQL Capital Social (Casting necessário pois importação bruta é texto)
     if capital_min is not None:
         cond.append("CAST(REPLACE(emp.capital_social, ',', '.') AS NUMERIC) >= :cmin"); p["cmin"] = capital_min
     if capital_max is not None:

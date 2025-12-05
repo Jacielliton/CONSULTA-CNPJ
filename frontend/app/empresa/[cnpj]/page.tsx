@@ -53,11 +53,7 @@ export default function DetalhesEmpresa() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4">
-      <div className="max-w-6xl mx-auto">
-        
-        <Link href="/" className="inline-flex items-center text-blue-600 hover:text-blue-800 font-medium mb-6 transition">
-          <span className="mr-2">←</span> Voltar para a busca
-        </Link>
+      <div className="max-w-6xl mx-auto">    
 
         {/* --- CABEÇALHO --- */}
         <div className="bg-white rounded-t-lg shadow-sm border border-gray-200 p-8 mb-6 relative overflow-hidden">
