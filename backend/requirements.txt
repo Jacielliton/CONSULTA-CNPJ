@@ -7,3 +7,6 @@ pg8000
 fastapi
 uvicorn[standard]
 elasticsearch==8.11.0
+pip install bcrypt==4.0.1
+pip install requests
+pip install python-dotenv

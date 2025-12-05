@@ -109,6 +109,19 @@ def criar_tabelas():
                 );
             """))
             
+            # ADICIONE ISTO NA FUNÇÃO criar_tabelas(), logo após criar a tabela socios:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    nome TEXT NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    senha_hash TEXT NOT NULL,
+                    contato TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
+            print("[*] Tabela de usuários verificada.")
+            
             # Criação de Índices Básicos para as novas tabelas
             print("[*] Criando índices das tabelas de referência...")
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_cnae_codigo ON cnaes (codigo);"))
