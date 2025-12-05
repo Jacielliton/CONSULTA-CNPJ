@@ -1,94 +1,141 @@
 "use client";
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import Cookies from 'js-cookie';
 
 export default function Dashboard() {
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
-    // Verifica cookie para exibir botão admin
-    const checkAdmin = () => {
-      const adminCookie = document.cookie.split('; ').find(row => row.startsWith('is_admin='));
-      if (adminCookie && adminCookie.split('=')[1] === 'true') {
-        setIsAdmin(true);
-      }
-    };
-    checkAdmin();
+    // 1. Verifica se está logado
+    const token = Cookies.get('auth_token');
+    setIsLoggedIn(!!token);
+
+    // 2. Verifica se é admin (cookie definido no login)
+    const adminCookie = Cookies.get('is_admin');
+    if (adminCookie === 'true') {
+      setIsAdmin(true);
+    }
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 relative">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 relative">
       
-      {/* Botão Admin (Só aparece se logado como Admin) */}
-      {isAdmin && (
-        <div className="absolute top-4 right-4 z-10">
+      {/* NAVEGAÇÃO SUPERIOR (Botões Condicionais) */}
+      <div className="absolute top-6 right-6 z-10 flex gap-3">
+        {isAdmin && (
           <Link 
             href="/admin" 
-            className="flex items-center gap-2 text-gray-500 hover:text-blue-700 font-medium transition px-3 py-2 rounded hover:bg-gray-100"
+            className="flex items-center gap-2 text-slate-600 hover:text-blue-700 font-bold text-sm bg-white border border-slate-200 px-4 py-2 rounded-lg shadow-sm transition hover:shadow-md"
           >
             ⚙️ Painel Admin
           </Link>
-        </div>
-      )}
+        )}
+        
+        {!isLoggedIn ? (
+          <Link 
+            href="/login" 
+            className="flex items-center gap-2 text-white bg-blue-600 hover:bg-blue-700 font-bold text-sm px-5 py-2 rounded-lg shadow-md transition"
+          >
+            Entrar
+          </Link>
+        ) : (
+          <div className="flex items-center gap-2 text-sm font-medium text-slate-500 bg-white px-4 py-2 rounded-lg border border-slate-100">
+            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+            Conectado
+          </div>
+        )}
+      </div>
 
-      <div className="text-center mb-12">
-        <h1 className="text-4xl font-extrabold text-blue-900 mb-4">Plataforma de Inteligência</h1>
-        <p className="text-gray-600 max-w-xl mx-auto">
-          Central unificada para consulta de empresas (CNPJ) e monitoramento de licitações públicas no estado do Maranhão.
+      {/* CABEÇALHO */}
+      <div className="text-center mb-16 max-w-3xl">
+        <h1 className="text-5xl font-extrabold text-slate-900 mb-6 tracking-tight">
+          Plataforma de <span className="text-blue-600">Inteligência</span>
+        </h1>
+        <p className="text-lg text-slate-500 leading-relaxed">
+          Central unificada para análise de dados empresariais (CNPJ) e monitoramento estratégico de licitações públicas no estado do Maranhão.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl w-full">
+      {/* GRID DE FERRAMENTAS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-7xl w-full px-4">
         
         {/* CARD 1: BUSCA SIMPLES */}
-        <Link href="/consulta-simples" className="group">
-          <div className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-xl border border-gray-200 transition-all transform hover:-translate-y-1 h-full flex flex-col">
-            <div className="w-14 h-14 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center mb-6 text-2xl">
+        <Link href="/consulta-simples" className="group h-full">
+          <div className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-xl border border-slate-200 transition-all duration-300 transform hover:-translate-y-1 h-full flex flex-col relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-blue-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
+            
+            <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-6 text-3xl shadow-inner group-hover:bg-blue-600 group-hover:text-white transition-colors duration-300">
               🔍
             </div>
-            <h2 className="text-xl font-bold text-gray-800 mb-3 group-hover:text-blue-600 transition">Consulta CNPJ Rápida</h2>
-            <p className="text-gray-500 text-sm flex-grow">
-              Pesquise empresas por nome, razão social ou número do CNPJ. Ideal para verificações rápidas de status cadastral.
+            
+            <h2 className="text-2xl font-bold text-slate-800 mb-3 group-hover:text-blue-600 transition-colors">
+              Consulta Rápida
+            </h2>
+            <p className="text-slate-500 text-sm leading-relaxed flex-grow">
+              Verificação ágil de empresas por Nome, Razão Social ou CNPJ. Ideal para validações cadastrais instantâneas.
             </p>
-            <span className="text-blue-600 font-semibold text-sm mt-6 flex items-center gap-2">
-              Acessar Ferramenta →
-            </span>
+            
+            <div className="mt-8 flex items-center text-blue-600 font-bold text-sm group-hover:gap-2 transition-all">
+              Acessar Ferramenta <span>→</span>
+            </div>
           </div>
         </Link>
 
         {/* CARD 2: BUSCA AVANÇADA */}
-        <Link href="/pesquisa-avancada" className="group">
-          <div className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-xl border border-gray-200 transition-all transform hover:-translate-y-1 h-full flex flex-col">
-            <div className="w-14 h-14 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center mb-6 text-2xl">
+        <Link href="/pesquisa-avancada" className="group h-full">
+          <div className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-xl border border-slate-200 transition-all duration-300 transform hover:-translate-y-1 h-full flex flex-col relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-purple-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
+            
+            <div className="w-16 h-16 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mb-6 text-3xl shadow-inner group-hover:bg-purple-600 group-hover:text-white transition-colors duration-300">
               🔬
             </div>
-            <h2 className="text-xl font-bold text-gray-800 mb-3 group-hover:text-purple-600 transition">Consulta Avançada</h2>
-            <p className="text-gray-500 text-sm flex-grow">
-              Filtros detalhados por Capital Social, Cidade, Situação Cadastral e CNAE. Exportação completa para Excel/CSV.
+            
+            <h2 className="text-2xl font-bold text-slate-800 mb-3 group-hover:text-purple-600 transition-colors">
+              Consulta Avançada
+            </h2>
+            <p className="text-slate-500 text-sm leading-relaxed flex-grow">
+              Filtros granulares por Capital Social, Localização (Cidade/UF), Status e Data. Gere relatórios completos em CSV/Excel.
             </p>
-            <span className="text-purple-600 font-semibold text-sm mt-6 flex items-center gap-2">
-              Acessar Ferramenta →
-            </span>
+            
+            <div className="mt-8 flex items-center text-purple-600 font-bold text-sm group-hover:gap-2 transition-all">
+              Acessar Ferramenta <span>→</span>
+            </div>
           </div>
         </Link>
 
         {/* CARD 3: LICITAÇÕES */}
-        <Link href="/licitacoes" className="group">
-          <div className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-xl border border-gray-200 transition-all transform hover:-translate-y-1 h-full flex flex-col">
-            <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center mb-6 text-2xl">
+        <Link href="/licitacoes" className="group h-full">
+          <div className="bg-white p-8 rounded-2xl shadow-sm hover:shadow-xl border border-slate-200 transition-all duration-300 transform hover:-translate-y-1 h-full flex flex-col relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-emerald-500 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300"></div>
+            
+            <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-6 text-3xl shadow-inner group-hover:bg-emerald-600 group-hover:text-white transition-colors duration-300">
               📜
             </div>
-            <h2 className="text-xl font-bold text-gray-800 mb-3 group-hover:text-emerald-600 transition">Monitor de Licitações</h2>
-            <p className="text-gray-500 text-sm flex-grow">
-              Acompanhe pregões e editais em tempo real direto do Mural do TCE-MA e Diário Oficial da FAMEM.
+            
+            <h2 className="text-2xl font-bold text-slate-800 mb-3 group-hover:text-emerald-600 transition-colors">
+              Licitações MA
+            </h2>
+            <p className="text-slate-500 text-sm leading-relaxed flex-grow">
+              Monitoramento em tempo real de pregões e editais no Mural do TCE-MA e Diário Oficial da FAMEM.
             </p>
-            <span className="text-emerald-600 font-semibold text-sm mt-6 flex items-center gap-2">
-              Acessar Ferramenta →
-            </span>
+            
+            <div className="mt-8 flex items-center text-emerald-600 font-bold text-sm group-hover:gap-2 transition-all">
+              Acessar Ferramenta <span>→</span>
+            </div>
           </div>
         </Link>
 
       </div>
+
+      {/* FOOTER SIMPLES */}
+      <div className="mt-20 text-center border-t border-slate-200 pt-8 w-full max-w-4xl">
+        <p className="text-slate-400 text-sm">
+          © {new Date().getFullYear()} Plataforma de Dados. Todos os direitos reservados.
+        </p>
+      </div>
+
     </div>
   );
 }

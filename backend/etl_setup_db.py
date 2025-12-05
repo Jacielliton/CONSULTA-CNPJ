@@ -124,9 +124,25 @@ def criar_tabelas():
                     senha_hash TEXT NOT NULL,
                     contato TEXT,
                     is_admin BOOLEAN DEFAULT FALSE,
+                    
+                    -- NOVAS COLUNAS
+                    plano_tipo VARCHAR(20) DEFAULT 'free', -- free, mensal, trimestral, anual
+                    creditos INT DEFAULT 10,               -- Saldo atual
+                    validade_plano TIMESTAMP,              -- Quando expira
+                    
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """))
+            
+            # Migrações para garantir que colunas existam em banco já criado
+            try:
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;"))
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS plano_tipo VARCHAR(20) DEFAULT 'free';"))
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS creditos INT DEFAULT 10;"))
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS validade_plano TIMESTAMP;"))
+                conn.commit()
+            except Exception as e: 
+                print(f"[!] Aviso migração users: {e}")
             
             # Migração coluna admin
             try:

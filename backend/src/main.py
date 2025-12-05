@@ -16,7 +16,6 @@ from passlib.context import CryptContext
 from jose import jwt, JWTError
 from fastapi.security import OAuth2PasswordBearer
 
-# --- CARREGAR ENV ---
 load_dotenv()
 
 # --- MÓDULOS DE LICITAÇÃO ---
@@ -30,7 +29,7 @@ except ImportError:
 app = FastAPI(title="Plataforma de Inteligência - CNPJ & Licitações")
 
 # ==============================================================================
-#  CONFIGURAÇÕES GERAIS
+#  CONFIGURAÇÕES
 # ==============================================================================
 
 # 1. ELASTICSEARCH
@@ -61,13 +60,42 @@ DB_NAME = os.getenv("DB_NAME", "cnpj_dados")
 DATABASE_URL = f"postgresql+pg8000://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 engine = create_engine(DATABASE_URL, pool_size=20, max_overflow=0)
 
-# 4. SEGURANÇA (JWT)
+# 4. SEGURANÇA
 SECRET_KEY = os.getenv("SECRET_KEY", "chave_secreta_padrao_insegura")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 # 24 horas
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+# ==============================================================================
+#  SISTEMA DE CRÉDITOS E PLANOS
+# ==============================================================================
+
+PLANOS = {
+    "free": {"nome": "Grátis", "creditos": 10, "preco": 0, "dias": 0},
+    "mensal": {"nome": "Pro Mensal", "creditos": 500, "preco": 99.90, "dias": 30},
+    "trimestral": {"nome": "Pro Trimestral", "creditos": 2000, "preco": 269.90, "dias": 90},
+    "anual": {"nome": "Pro Anual", "creditos": 10000, "preco": 899.90, "dias": 365}
+}
+
+def descontar_creditos(usuario: dict, custo: int):
+    """Verifica saldo e desconta. Admin é isento."""
+    if usuario.get('is_admin'):
+        return True # Admin free
+
+    saldo = usuario.get('creditos', 0)
+    if saldo < custo:
+        raise HTTPException(
+            status_code=402, 
+            detail=f"Saldo insuficiente. Necessário: {custo} | Atual: {saldo}. Recarregue seu plano."
+        )
+    
+    with engine.connect() as conn:
+        conn.execute(text("UPDATE users SET creditos = creditos - :c WHERE id = :id"), 
+                     {"c": custo, "id": usuario['id']})
+        conn.commit()
+    return True
 
 # ==============================================================================
 #  AUTENTICAÇÃO & DEPENDÊNCIAS
@@ -83,11 +111,8 @@ class UserLogin(BaseModel):
     email: str
     senha: str
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
-
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+def get_password_hash(password): return pwd_context.hash(password)
+def verify_password(plain, hashed): return pwd_context.verify(plain, hashed)
 
 def create_access_token(data: dict):
     to_encode = data.copy()
@@ -109,7 +134,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         raise credentials_exception
         
     with engine.connect() as conn:
-        user = conn.execute(text("SELECT id, nome, email, contato, is_admin FROM users WHERE email = :e"), {"e": email}).mappings().fetchone()
+        # Busca usuário com colunas de crédito
+        user = conn.execute(text("""
+            SELECT id, nome, email, contato, is_admin, plano_tipo, creditos, validade_plano 
+            FROM users WHERE email = :e
+        """), {"e": email}).mappings().fetchone()
         
     if user is None: raise credentials_exception
     return dict(user)
@@ -119,7 +148,7 @@ def get_current_admin(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="Acesso negado. Requer Admin.")
     return current_user
 
-# --- ROTAS DE AUTH ---
+# --- ROTAS AUTH ---
 
 @app.post("/auth/register")
 def register(user: UserCreate):
@@ -128,9 +157,10 @@ def register(user: UserCreate):
         if exists: raise HTTPException(status_code=400, detail="Email já cadastrado.")
         
         hashed = get_password_hash(user.senha)
+        # Cria usuário com plano free (10 créditos)
         conn.execute(text("""
-            INSERT INTO users (nome, email, senha_hash, contato, is_admin) 
-            VALUES (:n, :e, :s, :c, FALSE)
+            INSERT INTO users (nome, email, senha_hash, contato, is_admin, plano_tipo, creditos) 
+            VALUES (:n, :e, :s, :c, FALSE, 'free', 10)
         """), {"n": user.nome, "e": user.email, "s": hashed, "c": user.contato})
         conn.commit()
     return {"msg": "Usuário criado!"}
@@ -143,25 +173,41 @@ def login(user: UserLogin):
     if not db_user or not verify_password(user.senha, db_user['senha_hash']):
         raise HTTPException(status_code=401, detail="Credenciais inválidas")
     
-    access_token = create_access_token(data={
-        "sub": db_user['email'], 
-        "name": db_user['nome'],
-        "admin": db_user['is_admin']
-    })
-    
-    return {
-        "access_token": access_token, 
-        "token_type": "bearer", 
-        "user_name": db_user['nome'],
-        "is_admin": db_user['is_admin']
-    }
+    access_token = create_access_token(data={"sub": db_user['email'], "name": db_user['nome'], "admin": db_user['is_admin']})
+    return {"access_token": access_token, "token_type": "bearer", "user_name": db_user['nome'], "is_admin": db_user['is_admin']}
 
 @app.get("/users/me")
 def read_users_me(current_user: dict = Depends(get_current_user)):
     return current_user
 
+# --- ROTAS ASSINATURA ---
+
+@app.get("/api/planos")
+def listar_planos():
+    return PLANOS
+
+@app.post("/api/assinar/{tipo_plano}")
+def assinar_plano(tipo_plano: str, user: dict = Depends(get_current_user)):
+    """Simula pagamento e libera créditos"""
+    plano = PLANOS.get(tipo_plano)
+    if not plano: raise HTTPException(400, "Plano inválido")
+    
+    nova_validade = datetime.now() + timedelta(days=plano['dias'])
+    
+    with engine.connect() as conn:
+        conn.execute(text("""
+            UPDATE users 
+            SET plano_tipo = :p, 
+                creditos = creditos + :c, 
+                validade_plano = :v 
+            WHERE id = :id
+        """), {"p": tipo_plano, "c": plano['creditos'], "v": nova_validade, "id": user['id']})
+        conn.commit()
+    
+    return {"status": "sucesso", "msg": f"Plano {plano['nome']} ativado! +{plano['creditos']} créditos."}
+
 # ==============================================================================
-#  HELPERS & UTILITÁRIOS
+#  HELPERS CNPJ
 # ==============================================================================
 
 def fmt_cnpj(b, o, d): return f"{b}.{o}/{d}" if b else ""
@@ -197,7 +243,7 @@ def realizar_backup():
             except: pass
 
 # ==============================================================================
-#  ROTAS CNPJ
+#  ROTAS DE DADOS (COM COBRANÇA DE CRÉDITOS)
 # ==============================================================================
 
 @app.get("/")
@@ -212,17 +258,14 @@ def listar_cidades(uf: str):
 
 @app.get("/buscar")
 def buscar_empresa(
-    q: Optional[str] = Query(None),
-    page: int = Query(1, ge=1),
-    limit: int = Query(10, ge=1, le=100),
-    uf: Optional[str] = Query(None, min_length=2, max_length=2),
-    municipio: Optional[str] = Query(None),
-    situacao: Optional[str] = Query(None),
-    data_inicio: Optional[str] = Query(None),
-    data_fim: Optional[str] = Query(None),
-    capital_min: Optional[float] = Query(None),
-    capital_max: Optional[float] = Query(None)
+    q: Optional[str]=None, page: int=1, limit: int=10, uf: Optional[str]=None, 
+    municipio: Optional[str]=None, situacao: Optional[str]=None, data_inicio: Optional[str]=None, 
+    data_fim: Optional[str]=None, capital_min: Optional[float]=None, capital_max: Optional[float]=None,
+    current_user: dict = Depends(get_current_user) # COBRANÇA
 ):
+    # Custa 1 crédito
+    descontar_creditos(current_user, 1)
+
     offset = (page - 1) * limit
     if not es_client: raise HTTPException(503, "Busca offline")
     must, filtros = [], []
@@ -242,7 +285,6 @@ def buscar_empresa(
         if data_fim: r["lte"] = data_fim.replace("-", "")
         filtros.append({"range": {"data_inicio_atividade": r}})
 
-    # Filtro Capital Social
     if capital_min is not None or capital_max is not None:
         cr = {}
         if capital_min is not None: cr["gte"] = capital_min
@@ -268,7 +310,10 @@ def buscar_empresa(
     except Exception as e: return {"items": [], "total": 0, "error": str(e)}
 
 @app.get("/empresa/{cnpj}")
-def detalhes_empresa(cnpj: str):
+def detalhes_empresa(cnpj: str, current_user: dict = Depends(get_current_user)):
+    # Custa 1 crédito
+    descontar_creditos(current_user, 1)
+
     c = cnpj.replace(".", "").replace("/", "").replace("-", "")
     b, o, d = c[:8], c[8:12], c[12:]
     with engine.connect() as conn:
@@ -291,8 +336,12 @@ def detalhes_empresa(cnpj: str):
 def exportar_dados(
     q: Optional[str]=None, uf: Optional[str]=None, municipio: Optional[str]=None, 
     situacao: Optional[str]=None, data_inicio: Optional[str]=None, data_fim: Optional[str]=None,
-    capital_min: Optional[float]=None, capital_max: Optional[float]=None
+    capital_min: Optional[float]=None, capital_max: Optional[float]=None,
+    current_user: dict = Depends(get_current_user) # COBRANÇA
 ):
+    # Custa 10 créditos
+    descontar_creditos(current_user, 10)
+
     cond = ["1=1"]
     p = {}
     if uf: cond.append("est.uf = :uf"); p["uf"] = uf
@@ -346,12 +395,14 @@ def exportar_dados(
                 yield ";".join([str(x).replace(";", ",").replace("\n", " ").strip() for x in l]) + "\n"
     return StreamingResponse(iterar(), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=relatorio_cnpj.csv"})
 
-# ==============================================================================
-#  ROTAS LICITAÇÕES
-# ==============================================================================
-
 @app.get("/api/licitacoes/tce")
-def get_licitacoes_tce(data_inicio: str=None, data_fim: str=None, tipo_procedimento: str='PP', finalidade: str=None):
+def get_licitacoes_tce(
+    data_inicio: str=None, data_fim: str=None, tipo_procedimento: str='PP', finalidade: str=None,
+    current_user: dict = Depends(get_current_user)
+):
+    # Custa 2 créditos
+    descontar_creditos(current_user, 2)
+    
     try:
         if not data_inicio: data_inicio = datetime.now().strftime('%Y-%m-%d')
         if not data_fim: data_fim = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
@@ -361,7 +412,13 @@ def get_licitacoes_tce(data_inicio: str=None, data_fim: str=None, tipo_procedime
     except Exception as e: return {"status": "error", "message": str(e)}
 
 @app.get("/api/licitacoes/famem")
-def get_licitacoes_famem(data_inicio: str=None, data_fim: str=None, termo: str="Pregão Presencial", titulo: str=None, categoria: str=None):
+def get_licitacoes_famem(
+    data_inicio: str=None, data_fim: str=None, termo: str="Pregão Presencial", titulo: str=None, categoria: str=None,
+    current_user: dict = Depends(get_current_user)
+):
+    # Custa 2 créditos
+    descontar_creditos(current_user, 2)
+
     try:
         if not data_inicio: data_inicio = datetime.now().strftime('%Y-%m-%d')
         if not data_fim: data_fim = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
@@ -371,8 +428,20 @@ def get_licitacoes_famem(data_inicio: str=None, data_fim: str=None, termo: str="
     except Exception as e: return {"status": "error", "message": str(e)}
 
 # ==============================================================================
-#  ROTAS ADMIN (PROTEGIDAS)
+#  ROTAS ADMIN
 # ==============================================================================
+@app.get("/admin/users", dependencies=[Depends(get_current_admin)])
+def list_users():
+    with engine.connect() as conn:
+        users = conn.execute(text("SELECT id, nome, email, contato, is_admin, plano_tipo, creditos, to_char(created_at, 'DD/MM/YYYY') as data_criacao FROM users ORDER BY id DESC")).mappings().all()
+    return {"users": [dict(u) for u in users]}
+
+@app.delete("/admin/users/{user_id}", dependencies=[Depends(get_current_admin)])
+def delete_user(user_id: int):
+    with engine.connect() as conn:
+        conn.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})
+        conn.commit()
+    return {"status": "ok"}
 
 @app.get("/admin/stats", dependencies=[Depends(get_current_admin)])
 def stats():

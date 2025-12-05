@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import Cookies from "js-cookie";
 import { useRouter } from "next/navigation";
+import Link from "next/link"; // Importar Link
 
 export default function AdminPanel() {
   const router = useRouter();
@@ -54,7 +55,6 @@ export default function AdminPanel() {
   };
 
   const executarAcao = async (acao: string, metodo = "POST") => {
-    // Confirmação apenas para limpeza total
     if (acao === "limpar" && !confirm("ATENÇÃO: Essa ação apaga TODOS os dados do banco e da busca! Tem certeza?")) return;
     
     setLoading(true);
@@ -95,11 +95,11 @@ export default function AdminPanel() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-blue-500">
-            <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">PostgreSQL (Base)</h3>
+            <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">PostgreSQL</h3>
             <p className="text-3xl font-bold text-gray-800">
               {stats.postgres_empresas ? Number(stats.postgres_empresas).toLocaleString() : 0}
             </p>
-            <span className="text-xs text-gray-400 font-medium">Registros Brutos</span>
+            <span className="text-xs text-gray-400 font-medium">Registros Base</span>
           </div>
 
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-green-500">
@@ -107,17 +107,17 @@ export default function AdminPanel() {
             <p className="text-3xl font-bold text-gray-800">
               {stats.elastic_empresas ? Number(stats.elastic_empresas).toLocaleString() : 0}
             </p>
-             <span className="text-xs text-gray-400 font-medium">Disponíveis na Pesquisa</span>
+             <span className="text-xs text-gray-400 font-medium">Disponíveis Busca</span>
           </div>
 
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-purple-500">
-            <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Tamanho em Disco</h3>
+            <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Disco</h3>
             <p className="text-2xl font-bold text-gray-800 mt-1">{stats.postgres_tamanho}</p>
-            <span className="text-xs text-gray-400 font-medium">Apenas DB SQL</span>
+            <span className="text-xs text-gray-400 font-medium">Tamanho DB</span>
           </div>
 
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 border-l-4 border-l-orange-500">
-            <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Status Elastic</h3>
+            <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-1">Elastic Status</h3>
             <p className={`text-2xl font-bold mt-1 ${stats.elastic_status?.includes("Online") ? "text-green-600" : "text-red-600"}`}>
               {stats.elastic_status}
             </p>
@@ -125,20 +125,40 @@ export default function AdminPanel() {
 
         </div>
 
-        {/* Feedback Message */}
+        {/* Mensagem de Feedback */}
         {msg && (
           <div className="bg-blue-600 text-white px-6 py-3 rounded-lg mb-8 shadow-lg font-medium animate-pulse flex items-center gap-2">
             <span className="text-xl">ℹ️</span> {msg}
           </div>
         )}
 
-        {/* Actions Grid */}
+        {/* --- ÁREA DE GESTÃO DE USUÁRIOS (NOVO) --- */}
+        <div className="mb-8">
+          <Link href="/admin/users" className="block group">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 flex items-center justify-between hover:border-blue-400 hover:shadow-md transition">
+              <div className="flex items-center gap-4">
+                <div className="bg-purple-100 text-purple-600 p-3 rounded-lg text-2xl group-hover:bg-purple-600 group-hover:text-white transition">
+                  👥
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-800 group-hover:text-blue-700 transition">Gerenciar Usuários</h2>
+                  <p className="text-gray-500 text-sm">Visualizar lista de clientes cadastrados e gerenciar acessos.</p>
+                </div>
+              </div>
+              <span className="text-blue-600 font-bold text-sm bg-blue-50 px-4 py-2 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition">
+                Acessar →
+              </span>
+            </div>
+          </Link>
+        </div>
+
+        {/* Ações Técnicas */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
           
           {/* Manutenção de Dados */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h2 className="text-lg font-bold mb-6 border-b pb-2 flex items-center gap-2 text-gray-700">
-              🛠️ Manutenção Automática
+              🛠️ Manutenção Técnica
             </h2>
             <div className="space-y-4">
               
@@ -229,75 +249,31 @@ export default function AdminPanel() {
           </div>
         </div>
 
-        {/* --- TUTORIAL MANUAL VIA TERMINAL --- */}
+        {/* --- TUTORIAL MANUAL --- */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
             <h2 className="text-lg font-bold flex items-center gap-2 text-gray-700">
               💻 Comandos Manuais (Terminal)
             </h2>
             <div className="bg-gray-100 p-1 rounded-lg flex gap-1">
-              <button 
-                onClick={() => setOsTab('windows')}
-                className={`px-3 py-1 text-xs font-bold rounded-md transition ${osTab === 'windows' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                Windows
-              </button>
-              <button 
-                onClick={() => setOsTab('linux')}
-                className={`px-3 py-1 text-xs font-bold rounded-md transition ${osTab === 'linux' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                Linux (VPS)
-              </button>
+              <button onClick={() => setOsTab('windows')} className={`px-3 py-1 text-xs font-bold rounded-md transition ${osTab === 'windows' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>Windows</button>
+              <button onClick={() => setOsTab('linux')} className={`px-3 py-1 text-xs font-bold rounded-md transition ${osTab === 'linux' ? 'bg-white shadow text-blue-600' : 'text-gray-500'}`}>Linux (VPS)</button>
             </div>
           </div>
           
           <div className="bg-gray-900 text-gray-300 p-5 rounded-lg font-mono text-xs overflow-x-auto border border-gray-700 shadow-inner leading-relaxed">
-            
             <div className="mb-4">
-              <p className="text-gray-500 mb-1"># 1. Ativar Ambiente Virtual</p>
-              {osTab === 'windows' ? (
-                <p className="text-green-400 select-all cursor-pointer hover:text-green-300">.\venv\Scripts\Activate.ps1</p>
-              ) : (
-                <p className="text-green-400 select-all cursor-pointer hover:text-green-300">source venv/bin/activate</p>
-              )}
+              <p className="text-gray-500 mb-1"># 1. Ativar Ambiente</p>
+              {osTab === 'windows' ? <p className="text-green-400 select-all">.\venv\Scripts\Activate.ps1</p> : <p className="text-green-400 select-all">source venv/bin/activate</p>}
             </div>
-
-            <div className="mb-4 pt-4 border-t border-gray-700">
-              <p className="text-yellow-500 font-bold mb-2">--- 🔄 ATUALIZAÇÃO COMPLETA (AUTO) ---</p>
-              <p className="text-gray-500 mb-2 italic">Roda: Download -- Importação -- Sync (Tudo de uma vez)</p>
-              
+            <div className="pt-2 border-t border-gray-700">
+              <p className="text-yellow-500 font-bold mb-2">--- ATUALIZAÇÃO COMPLETA ---</p>
               {osTab === 'linux' ? (
-                <>
-                  <p className="text-purple-400 font-bold mb-1">⚠️ RECOMENDADO: Use 'screen' para não cair a conexão</p>
-                  <p className="text-gray-400 select-all mb-2">screen -S atualizacao</p>
-                  
-                  <p className="text-green-400 select-all font-bold border-l-4 border-green-600 pl-2">
-                    python etl_download.py && python etl_import.py && python etl_sync_es.py
-                  </p>
-                </>
+                <p className="text-green-400 select-all font-bold border-l-4 border-green-600 pl-2">screen -S update && python etl_download.py && python etl_import.py && python etl_sync_es.py</p>
               ) : (
-                <p className="text-green-400 select-all font-bold border-l-4 border-green-600 pl-2">
-                  python etl_download.py ; python etl_import.py ; python etl_sync_es.py
-                </p>
+                <p className="text-green-400 select-all font-bold border-l-4 border-green-600 pl-2">python etl_download.py ; python etl_import.py ; python etl_sync_es.py</p>
               )}
             </div>
-
-            <div className="mb-4 pt-4 border-t border-gray-700">
-              <p className="text-blue-400 font-bold mb-2">--- COMANDOS INDIVIDUAIS ---</p>
-
-              <p className="text-gray-500 mb-1"># A: Baixar dados</p>
-              <p className="text-green-400 select-all mb-3 hover:text-white cursor-pointer">python etl_download.py</p>
-
-              <p className="text-gray-500 mb-1"># B: Importar (Demorado)</p>
-              <p className="text-green-400 select-all mb-3 hover:text-white cursor-pointer">python etl_import.py</p>
-
-              <p className="text-gray-500 mb-1"># C: Criar Índices (Postgres)</p>
-              <p className="text-green-400 select-all mb-3 hover:text-white cursor-pointer">python etl_optimize_db.py</p>
-
-              <p className="text-gray-500 mb-1"># D: Sincronizar Elastic</p>
-              <p className="text-green-400 select-all mb-3 hover:text-white cursor-pointer">python etl_sync_es.py</p>
-            </div>
-
           </div>
         </div>
 
